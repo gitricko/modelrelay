@@ -1,3 +1,5 @@
+FROM node:24-alpine
+
 # Install dependencies
 RUN apk add --no-cache ca-certificates
 
@@ -13,3 +15,4 @@ EXPOSE 7352
 # Entrypoint: handles commands passed to the container
 ENTRYPOINT ["modelrelay"]
 CMD ["start"]
+
