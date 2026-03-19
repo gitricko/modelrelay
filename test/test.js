@@ -5,7 +5,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 
-import { sources, MODELS } from '../sources.js'
+import { sources, MODELS, canonicalizeModelId, getPreferredModelLabel } from '../sources.js'
 import {
   getAvg,
   getVerdict,
@@ -26,8 +26,6 @@ import { exportConfigToken, getApiKey, getProviderBaseUrl, getProviderModelId, g
 import { buildNpmInstallInvocation, buildWindowsPostUpdateRestartCommand, getForcedUpdateVersion, getLocalUpdateTarballPath, getLocalUpdateVersion, isRunningFromSource, shouldStopAutostartBeforeUpdate } from '../lib/update.js'
 import { isQwenOauthAccessTokenValid, pollQwenOauthDeviceToken, resolveQwenCodeOauthAccessToken, startQwenOauthDeviceLogin } from '../lib/qwencodeAuth.js'
 import { toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta } from '../lib/server.js'
-import { canonicalizeModelId } from '../sources.js'
-
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 
@@ -298,6 +296,16 @@ describe('dynamic model score resolution', () => {
     assert.equal(model.isEstimatedScore, false)
   })
 
+  it('applies preferred labels to KiloCode dynamic models', () => {
+    const model = toKiloCodeModelMeta({
+      id: 'xiaomi/mimo-v2-omni:free',
+      display_name: 'xiaomi/mimo-v2-omni:free',
+    })
+
+    assert.ok(model)
+    assert.equal(model.label, 'MiMo V2 Omni')
+  })
+
   it('uses aliased scores.js entries for OpenCode Zen chat models', () => {
     const model = toOpenCodeModelMeta({
       id: 'minimax-m2.5-free',
@@ -310,6 +318,13 @@ describe('dynamic model score resolution', () => {
 
   it('ignores OpenCode Zen models that are not chat-completions compatible', () => {
     assert.equal(toOpenCodeModelMeta({ id: 'gpt-5.4' }), null)
+  })
+
+  it('applies preferred MiMo display labels', () => {
+    assert.equal(getPreferredModelLabel('mimo-v2-omni-free'), 'MiMo V2 Omni')
+    assert.equal(getPreferredModelLabel('xiaomi/mimo-v2-omni:free'), 'MiMo V2 Omni')
+    assert.equal(getPreferredModelLabel('xiaomi/mimo-v2-pro:free'), 'MiMo V2 Omni Pro')
+    assert.equal(getPreferredModelLabel('x-ai/grok-code-fast-1:optimized:free'), 'Grok Code Fast')
   })
 })
 
@@ -876,6 +891,26 @@ describe('model grouping and filtering', () => {
     assert.equal(groups[0].id, 'minimax-m2.5')
   })
 
+  it('groups MiMo Omni aliases under one model name', () => {
+    const groups = buildModelGroups([
+      mockResult({ modelId: 'mimo-v2-omni-free', label: 'MiMo V2 Omni' }),
+      mockResult({ modelId: 'xiaomi/mimo-v2-omni:free', label: 'MiMo V2 Omni' }),
+      mockResult({ modelId: 'xiaomi/mimo-v2-pro:free', label: 'MiMo V2 Omni Pro' }),
+    ], canonicalizeModelId)
+
+    const omniGroup = groups.find(group => group.id === 'mimo-v2-omni')
+    assert.ok(omniGroup)
+    assert.equal(omniGroup.label, 'MiMo V2 Omni')
+    assert.equal(omniGroup.models.length, 2)
+    assert.ok(omniGroup.aliases.includes('mimo-v2-omni-free'))
+    assert.ok(omniGroup.aliases.includes('xiaomi/mimo-v2-omni:free'))
+
+    const proGroup = groups.find(group => group.id === 'mimo-v2-pro')
+    assert.ok(proGroup)
+    assert.equal(proGroup.label, 'MiMo V2 Omni Pro')
+    assert.equal(proGroup.models.length, 1)
+  })
+
   it('filters by exact model ID', () => {
     const filtered = filterModelsByRequested(results, 'nvidia/glm4.7', canonicalizeModelId)
     assert.equal(filtered.length, 1)
@@ -893,6 +928,24 @@ describe('model grouping and filtering', () => {
     assert.equal(filtered.length, 2)
     assert.ok(filtered.some(r => r.modelId === 'nvidia/glm4.7'))
     assert.ok(filtered.some(r => r.modelId === 'openrouter/glm4.7:free'))
+  })
+
+  it('filters by MiMo Omni alias name', () => {
+    const filtered = filterModelsByRequested([
+      mockResult({ modelId: 'mimo-v2-omni-free', label: 'MiMo V2 Omni' }),
+      mockResult({ modelId: 'xiaomi/mimo-v2-omni:free', label: 'MiMo V2 Omni' }),
+      mockResult({ modelId: 'xiaomi/mimo-v2-pro:free', label: 'MiMo V2 Omni Pro' }),
+    ], 'mimo-v2-omni', canonicalizeModelId)
+
+    assert.equal(filtered.length, 2)
+    assert.ok(filtered.some(r => r.modelId === 'mimo-v2-omni-free'))
+    assert.ok(filtered.some(r => r.modelId === 'xiaomi/mimo-v2-omni:free'))
+  })
+
+  it('canonicalizes stacked model suffixes', () => {
+    const canonical = canonicalizeModelId('x-ai/grok-code-fast-1:optimized:free')
+    assert.equal(canonical.base, 'x-ai/grok-code-fast-1')
+    assert.equal(canonical.unprefixed, 'grok-code-fast-1')
   })
 
   it('returns no models if no match is found', () => {

@@ -5,12 +5,35 @@
 
 import { scores } from './scores.js'
 
+export const MODEL_ID_ALIASES = {
+  'mimo-v2-omni-free': 'xiaomi/mimo-v2-omni:free',
+}
+
+export const MODEL_LABEL_OVERRIDES = {
+  'mimo-v2-omni-free': 'MiMo V2 Omni',
+  'xiaomi/mimo-v2-omni:free': 'MiMo V2 Omni',
+  'xiaomi/mimo-v2-pro:free': 'MiMo V2 Omni Pro',
+  'x-ai/grok-code-fast-1:optimized:free': 'Grok Code Fast',
+}
+
+export function resolveAliasedModelId(modelId) {
+  const raw = typeof modelId === 'string' ? modelId.trim() : ''
+  if (!raw) return ''
+  return MODEL_ID_ALIASES[raw] || raw
+}
+
 export function canonicalizeModelId(modelId) {
-  // 1. Remove suffix like :free
-  const base = modelId.replace(/:[a-z0-9-]+$/i, '');
+  const resolved = resolveAliasedModelId(modelId)
+  // 1. Remove provider/runtime suffixes like :free or :optimized:free
+  const base = resolved.replace(/(?::[a-z0-9-]+)+$/i, '');
   // 2. Remove provider prefix like google/
   const unprefixed = base.includes('/') ? base.split('/').pop() : base;
   return { base, unprefixed };
+}
+
+export function getPreferredModelLabel(modelId, fallback = null) {
+  const resolved = resolveAliasedModelId(modelId)
+  return MODEL_LABEL_OVERRIDES[modelId] || MODEL_LABEL_OVERRIDES[resolved] || fallback
 }
 
 export function getScore(modelId) {
