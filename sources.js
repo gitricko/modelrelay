@@ -297,6 +297,11 @@ export const sources = {
       ["gemma-3-12b-it", "Gemma 3 12B", "128k"],
       ["gemma-3-4b-it", "Gemma 3 4B", "128k"]
     ]
+  },
+  "antigravity": {
+    "name": "Antigravity",
+    "url": "https://cloudcode-pa.googleapis.com/v1internal",
+    "models": []
   }
 }
 

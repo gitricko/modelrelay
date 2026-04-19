@@ -1468,3 +1468,88 @@ describe('multi-account round-robin', () => {
     })
   })
 })
+
+// ── Antigravity provider \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+import { generatePKCE, generateState } from '../lib/auth/pkce.js'
+import { getOAuthCredential, setOAuthCredential, deleteOAuthCredential } from '../lib/config.js'
+
+describe('PKCE generation', () => {
+  it('generates a code verifier of correct length and charset', () => {
+    const { codeVerifier } = generatePKCE()
+    assert.match(codeVerifier, /^[A-Za-z0-9\-._~]+$/)
+    assert.ok(codeVerifier.length >= 43 && codeVerifier.length <= 128)
+  })
+
+  it('generates a base64url code challenge from the verifier', () => {
+    const { codeChallenge } = generatePKCE()
+    // base64url: no +, /, or = padding
+    assert.match(codeChallenge, /^[A-Za-z0-9\-_]+$/)
+    assert.ok(codeChallenge.length > 0)
+  })
+
+  it('generates a different verifier on each call', () => {
+    const a = generatePKCE()
+    const b = generatePKCE()
+    assert.notEqual(a.codeVerifier, b.codeVerifier)
+  })
+
+  it('generateState returns a non-empty hex string', () => {
+    const state = generateState()
+    assert.match(state, /^[a-f0-9]+$/)
+    assert.ok(state.length >= 16)
+    assert.notEqual(generateState(), generateState())
+  })
+})
+
+describe('OAuth credential storage', () => {
+  it('get returns null when no oauth section exists', () => {
+    assert.equal(getOAuthCredential({}, 'antigravity'), null)
+    assert.equal(getOAuthCredential({ oauth: {} }, 'antigravity'), null)
+  })
+
+  it('set stores credential under oauth[provider]', () => {
+    const config = {}
+    const cred = { accessToken: 'tok', expiresAt: '2099-01-01T00:00:00Z', email: 'test@example.com' }
+    setOAuthCredential(config, 'antigravity', cred)
+    assert.deepEqual(config.oauth.antigravity, cred)
+  })
+
+  it('get returns stored credential', () => {
+    const config = {}
+    const cred = { accessToken: 'tok2', refreshToken: 'ref', expiresAt: '2099-01-01T00:00:00Z' }
+    setOAuthCredential(config, 'antigravity', cred)
+    assert.deepEqual(getOAuthCredential(config, 'antigravity'), cred)
+  })
+
+  it('deleteOAuthCredential removes the provider entry', () => {
+    const config = {}
+    setOAuthCredential(config, 'antigravity', { accessToken: 'tok3' })
+    deleteOAuthCredential(config, 'antigravity')
+    assert.equal(getOAuthCredential(config, 'antigravity'), null)
+  })
+
+  it('set overwrites an existing credential', () => {
+    const config = {}
+    setOAuthCredential(config, 'antigravity', { accessToken: 'old' })
+    setOAuthCredential(config, 'antigravity', { accessToken: 'new', email: 'a@b.com' })
+    assert.equal(getOAuthCredential(config, 'antigravity').accessToken, 'new')
+    assert.equal(getOAuthCredential(config, 'antigravity').email, 'a@b.com')
+  })
+
+  it('handles multiple providers independently', () => {
+    const config = {}
+    setOAuthCredential(config, 'antigravity', { accessToken: 'ag-tok' })
+    setOAuthCredential(config, 'other', { accessToken: 'other-tok' })
+    assert.equal(getOAuthCredential(config, 'antigravity').accessToken, 'ag-tok')
+    assert.equal(getOAuthCredential(config, 'other').accessToken, 'other-tok')
+    deleteOAuthCredential(config, 'antigravity')
+    assert.equal(getOAuthCredential(config, 'antigravity'), null)
+    assert.equal(getOAuthCredential(config, 'other').accessToken, 'other-tok')
+  })
+
+  it('sources includes antigravity provider entry', () => {
+    assert.ok(sources['antigravity'])
+    assert.equal(sources['antigravity'].name, 'Antigravity')
+    assert.ok(Array.isArray(sources['antigravity'].models))
+  })
+})
