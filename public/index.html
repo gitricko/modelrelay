@@ -3078,6 +3078,7 @@
       const providerGroup = document.getElementById('filter-provider-group');
       if (!providerGroup) return;
 
+      const existingKeys = new Set(Array.from(providerGroup.querySelectorAll('input')).map(cb => cb.value));
       const selected = new Set(Array.from(providerGroup.querySelectorAll('input:checked')).map(cb => cb.value));
       const enabledProviders = (providerConfigs || []).filter(p => p.enabled);
 
@@ -3087,7 +3088,8 @@
         .join('');
 
       providerGroup.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-        cb.checked = selected.size === 0 || selected.has(cb.value);
+        // Auto-check if: 1. No providers were selected yet, 2. This was previously selected, OR 3. This provider is brand new
+        cb.checked = selected.size === 0 || selected.has(cb.value) || !existingKeys.has(cb.value);
       });
     }
 
@@ -3431,7 +3433,7 @@
             (async () => {
               await updateAntigravityStatusPill();
             })();
-            continue;
+            return;
           }
 
           section.innerHTML = `
