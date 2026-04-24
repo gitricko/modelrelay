@@ -14,7 +14,7 @@
 
 ---
 
-### 🔥 100% Free • Auto-Routing • 80+ Models • 11+ Providers • OpenAI-Compatible
+### 🔥 100% Free • Auto-Routing • 80+ Models • 12+ Providers • OpenAI-Compatible
 
 **modelrelay** is an OpenAI-compatible local router that benchmarks free coding models across top providers and automatically forwards your requests to the best available model. 
 
