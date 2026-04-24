@@ -359,7 +359,7 @@ describe('provider api key resolution', () => {
     const originalClientId = process.env.KIRO_OAUTH_CLIENT_ID
     const originalClientSecret = process.env.KIRO_OAUTH_CLIENT_SECRET
     const originalFetch = globalThis.fetch
-    const refreshToken = `aorAAAAAG-${Date.now()}`
+    const refreshToken = `aorAAAAAG-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`
 
     process.env.KIRO_REFRESH_TOKEN = refreshToken
     delete process.env.KIRO_OAUTH_CLIENT_ID
