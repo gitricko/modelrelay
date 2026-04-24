@@ -3453,6 +3453,7 @@
       const providerGroup = document.getElementById('filter-provider-group');
       if (!providerGroup) return;
 
+      const existingKeys = new Set(Array.from(providerGroup.querySelectorAll('input')).map(cb => cb.value));
       const selected = new Set(Array.from(providerGroup.querySelectorAll('input:checked')).map(cb => cb.value));
       const enabledProviders = (providerConfigs || []).filter(p => p.enabled);
 
@@ -3462,7 +3463,8 @@
         .join('');
 
       providerGroup.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-        cb.checked = selected.size === 0 || selected.has(cb.value);
+        // Auto-check if: 1. No providers were selected yet, 2. This was previously selected, OR 3. This provider is brand new
+        cb.checked = selected.size === 0 || selected.has(cb.value) || !existingKeys.has(cb.value);
       });
     }
 
@@ -3761,16 +3763,64 @@
           const section = document.createElement('div');
           const isRefreshing = providerRefreshInFlight.has(p.key);
           section.className = 'provider-section';
+
+          // ── Antigravity: replace API-key form with OAuth button ────────────────────────
+          if (p.key === 'antigravity') {
+            section.innerHTML = `
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.75rem;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <span id="ag-status-pill" style="background:#f3f2f1; color:#92400e; border-radius:999px; padding:2px 10px; font-size:0.75rem; font-weight:600;">⏳ Checking...</span>
+                  <h3 style="margin:0; font-size:1rem;">Antigravity</h3>
+                  <button class="provider-model-refresh-btn ${isRefreshing ? 'is-loading' : ''}" ${isRefreshing ? 'disabled' : ''} onclick='refreshProviderModels("antigravity", "Antigravity")' title="Refresh models">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"></path><polyline points="21 3 21 9 15 9"></polyline></svg>
+                    <span>${isRefreshing ? 'Refreshing…' : `${modelCount} model${modelCount !== 1 ? 's' : ''}`}</span>
+                  </button>
+                  <a href="https://cloud.google.com/products/ai-code-assistance" target="_blank" rel="noopener noreferrer" style="font-size:0.78rem; color:var(--accent); text-decoration:none; font-weight:600;">About</a>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <label style="display:flex; align-items:center; gap:6px; font-size:0.8rem; cursor:pointer;">
+                    <input type="checkbox" id="enable-${p.key}" ${p.enabled ? 'checked' : ''} onchange="updateProvider('${p.key}')">
+                    Enabled
+                  </label>
+                </div>
+              </div>
+              <div id="ag-login-section" style="margin-top:4px;">
+                <p style="font-size:0.82rem; color:var(--text-muted); margin:0 0 12px 0;">Sign in with your Google account to access <b>Google Cloud Code Assist</b> — free Gemini access via browser OAuth.</p>
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                  <a id="ag-signin-btn" href="/auth/antigravity/start" target="_blank"
+                    style="display:inline-flex; align-items:center; gap:8px; background:white; border:1px solid #dadce0; border-radius:8px; padding:10px 16px; font-size:0.875rem; font-weight:600; color:#3c4043; text-decoration:none; box-shadow:0 1px 3px rgba(0,0,0,0.1); cursor:pointer;"
+                    onclick="pollAntigravityStatus()">
+                    <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.2l6.7-6.7C35.7 2.5 30.2 0 24 0 14.7 0 6.8 5.4 2.9 13.3l7.8 6.1C12.7 13.2 17.9 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.2 7.1-17z"/><path fill="#FBBC05" d="M10.7 28.6A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.2.8-4.6L2.5 13.3A24 24 0 0 0 0 24c0 3.8.9 7.4 2.5 10.6l8.2-6z"/><path fill="#34A853" d="M24 48c6.2 0 11.5-2.1 15.3-5.6l-7.5-5.8c-2 1.4-4.7 2.2-7.8 2.2-6.1 0-11.2-4.1-13.1-9.7l-8.2 6C6.8 42.6 14.7 48 24 48z"/></svg>
+                    Sign in with Google
+                  </a>
+                  <span id="ag-logout-btn" style="display:none;">
+                    <button onclick="antigravityLogout()" style="border:1px solid #fecaca; background:#fff1f2; color:#b91c1c; cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.8rem; font-weight:600;">Sign Out</button>
+                  </span>
+                </div>
+              </div>
+              <div class="form-group" style="display:flex; gap:8px; align-items:center; margin-top:12px;">
+                <span style="font-size:0.75rem; color:var(--text-muted); white-space:nowrap;">Ping interval (min):</span>
+                <input type="number" id="ping-interval-${p.key}" min="1" step="1" value="${p.pingIntervalMinutes || ''}" placeholder="30" style="width:70px; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.8rem;" onchange="updateProviderPingInterval('${p.key}')">
+                <span style="font-size:0.75rem; color:var(--text-muted);">(default: 30)</span>
+              </div>
+              ${providerErrorHtml}
+              ${rateLimitHtml}
+            `;
+            container.appendChild(section);
+            // Immediately check status
+            (async () => {
+              await updateAntigravityStatusPill();
+            })();
+            return;
+          }
+
           section.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.75rem;">
               <div style="display:flex; align-items:center; gap:10px;">
                 <span style="background:${statusBg}; color:${statusColor}; border-radius:999px; padding:2px 10px; font-size:0.75rem; font-weight:600;">${statusIcon} ${statusText}</span>
                 <h3 style="margin:0; font-size:1rem;">${p.name}</h3>
                 <button class="provider-model-refresh-btn ${isRefreshing ? 'is-loading' : ''}" ${isRefreshing ? 'disabled' : ''} onclick='refreshProviderModels(${JSON.stringify(p.key)}, ${JSON.stringify(p.name)})' title="Refresh provider models">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
-                    <polyline points="21 3 21 9 15 9"></polyline>
-                  </svg>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"></path><polyline points="21 3 21 9 15 9"></polyline></svg>
                   <span>${isRefreshing ? 'Refreshing…' : `${modelCount} model${modelCount !== 1 ? 's' : ''}`}</span>
                 </button>
                 ${p.signupUrl ? `<a href="${p.signupUrl}" target="_blank" rel="noopener noreferrer" style="font-size:0.78rem; color:var(--accent); text-decoration:none; font-weight:600;">Get API key</a>` : ''}
@@ -4054,6 +4104,69 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ providerKey: key, useBearerAuth })
       });
+    }
+
+    // ── Antigravity OAuth helpers ──────────────────────────────────────────────────
+    let _agStatusPollTimer = null;
+
+    async function updateAntigravityStatusPill() {
+      const pill = document.getElementById('ag-status-pill');
+      const logoutBtn = document.getElementById('ag-logout-btn');
+      const signinBtn = document.getElementById('ag-signin-btn');
+      if (!pill) return;
+      try {
+        const res = await fetch('/auth/antigravity/status');
+        const data = await res.json();
+        if (data.loggedIn && !data.expired) {
+          pill.style.background = '#ecfdf5';
+          pill.style.color = '#065f46';
+          pill.textContent = `✅ Logged in${data.email ? ' as ' + data.email : ''}`;
+          if (logoutBtn) logoutBtn.style.display = 'inline';
+          if (signinBtn) signinBtn.textContent = '🔄 Re-authenticate';
+        } else if (data.loggedIn && data.expired) {
+          pill.style.background = '#fffbeb';
+          pill.style.color = '#92400e';
+          pill.textContent = '⚠️ Token expired — please re-login';
+          if (logoutBtn) logoutBtn.style.display = 'inline';
+        } else {
+          pill.style.background = '#f3f2f1';
+          pill.style.color = '#92400e';
+          pill.textContent = '⚠️ Not logged in';
+          if (logoutBtn) logoutBtn.style.display = 'none';
+        }
+      } catch {
+        pill.style.background = '#fef2f2';
+        pill.style.color = '#7f1d1d';
+        pill.textContent = '✖ Status unavailable';
+      }
+    }
+
+    function pollAntigravityStatus() {
+      if (_agStatusPollTimer) clearInterval(_agStatusPollTimer);
+      // Poll every 2s for up to 3 minutes after clicking Sign In
+      let polls = 0;
+      const maxPolls = 90;
+      _agStatusPollTimer = setInterval(async () => {
+        polls++;
+        await updateAntigravityStatusPill();
+        const pill = document.getElementById('ag-status-pill');
+        if ((pill && pill.textContent.includes('Logged in')) || polls >= maxPolls) {
+          clearInterval(_agStatusPollTimer);
+          _agStatusPollTimer = null;
+          // Refresh models list
+          await loadSettings();
+          await fetchData();
+        }
+      }, 2000);
+    }
+
+    async function antigravityLogout() {
+      if (!confirm('Sign out from Google Antigravity?')) return;
+      try {
+        await fetch('/auth/antigravity/logout', { method: 'POST' });
+      } catch {}
+      await loadSettings();
+      await fetchData();
     }
 
     function loadChatState() {
