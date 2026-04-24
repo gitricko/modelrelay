@@ -344,7 +344,7 @@ describe('provider api key resolution', () => {
       assert.equal(getApiKey({ apiKeys: {} }, 'kiro'), 'kiro-env-key')
       assert.equal(getApiKey({ apiKeys: { kiro: 'file-key' } }, 'kiro'), 'kiro-env-key')
     } finally {
-      if (original == null) delete process.env.KIRO_API_KEY
+      if (original === undefined) delete process.env.KIRO_API_KEY
       else process.env.KIRO_API_KEY = original
     }
   })
