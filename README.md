@@ -220,13 +220,17 @@ Example:
   - `CODESTRAL_API_KEY`
   - `HYPERBOLIC_API_KEY`
   - `SCALEWAY_API_KEY`
-  - `KIRO_API_KEY`
+  - `KIRO_REFRESH_TOKEN`
+  - `KIRO_OAUTH_CLIENT_ID` (optional, for AWS Builder/IDC refresh flow)
+  - `KIRO_OAUTH_CLIENT_SECRET` (optional, for AWS Builder/IDC refresh flow)
   - `GOOGLE_API_KEY`
 
-Kiro notes:
+Kiro OAuth notes:
 - Base endpoint is preconfigured to `https://runtime.us-east-1.kiro.dev/v1/chat/completions`
 - Current Kiro model IDs include `claude-sonnet-4.5` and `claude-haiku-4.5`
-- Authentication uses `KIRO_API_KEY`
+- Authentication uses OAuth access tokens refreshed from:
+  - `KIRO_REFRESH_TOKEN`, or
+  - `~/.aws/sso/cache` (auto-detected refresh token), following OmniRoute’s approach.
 
 For hosted Ollama, set `OLLAMA_API_KEY` and optionally override `OLLAMA_BASE_URL` / `OLLAMA_MODEL`.
 If you leave the Ollama base URL blank in the UI, modelrelay defaults to `https://ollama.com/v1`.

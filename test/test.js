@@ -26,7 +26,7 @@ import { normalizeMissingScoreId } from '../lib/score-fetcher.js'
 import { resolveAutostartExecPath, resolveAutostartNodePath } from '../lib/autostart.js'
 import { exportConfigToken, getApiKey, getApiKeyPool, getMaxTurns, getPinningMode, getProviderBaseUrl, getProviderModelId, getProviderPingIntervalMs, hasMultipleKeys, importConfigToken, normalizeConfigShape } from '../lib/config.js'
 import { buildNpmInstallInvocation, buildWindowsPostUpdateRestartCommand, getForcedUpdateVersion, getLocalUpdateTarballPath, getLocalUpdateVersion, isRunningFromSource, shouldStopAutostartBeforeUpdate } from '../lib/update.js'
-import { buildOpencodeHeaders, buildOpencodeProjectId, buildProviderRequestHeaders, extractOllamaModelRecords, getAccountStatus, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, providerWantsBearerAuth, shouldRetryOptionalProviderWithBearer, toOllamaModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta } from '../lib/server.js'
+import { buildOpencodeHeaders, buildOpencodeProjectId, buildProviderRequestHeaders, extractOllamaModelRecords, getAccountStatus, getKiroRefreshToken, hasKiroAuthConfigured, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, providerWantsBearerAuth, resolveKiroOAuthAccessToken, shouldRetryOptionalProviderWithBearer, toOllamaModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta } from '../lib/server.js'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 
@@ -333,19 +333,67 @@ describe('provider api key resolution', () => {
     }
   })
 
-  it('supports Kiro provider env var override', () => {
-    const original = process.env.KIRO_API_KEY
+  it('resolves Kiro OAuth refresh token from env and config', () => {
+    const original = process.env.KIRO_REFRESH_TOKEN
 
     try {
-      delete process.env.KIRO_API_KEY
-      assert.equal(getApiKey({ apiKeys: {} }, 'kiro'), null)
+      delete process.env.KIRO_REFRESH_TOKEN
+      assert.equal(getKiroRefreshToken({ providers: {} }), null)
+      assert.equal(getKiroRefreshToken({ providers: { kiro: { refreshToken: 'config-refresh-token' } } }), 'config-refresh-token')
 
-      process.env.KIRO_API_KEY = 'kiro-env-key'
-      assert.equal(getApiKey({ apiKeys: {} }, 'kiro'), 'kiro-env-key')
-      assert.equal(getApiKey({ apiKeys: { kiro: 'file-key' } }, 'kiro'), 'kiro-env-key')
+      process.env.KIRO_REFRESH_TOKEN = 'env-refresh-token'
+      assert.equal(getKiroRefreshToken({ providers: { kiro: { refreshToken: 'config-refresh-token' } } }), 'env-refresh-token')
     } finally {
-      if (original === undefined) delete process.env.KIRO_API_KEY
-      else process.env.KIRO_API_KEY = original
+      if (original === undefined) delete process.env.KIRO_REFRESH_TOKEN
+      else process.env.KIRO_REFRESH_TOKEN = original
+    }
+  })
+
+  it('reports Kiro auth configured when OAuth refresh token is present', () => {
+    assert.equal(hasKiroAuthConfigured({ providers: {} }), false)
+    assert.equal(hasKiroAuthConfigured({ providers: { kiro: { refreshToken: 'rtok' } } }), true)
+  })
+
+  it('refreshes Kiro OAuth access tokens from the Kiro refresh endpoint', async () => {
+    const originalRefreshToken = process.env.KIRO_REFRESH_TOKEN
+    const originalClientId = process.env.KIRO_OAUTH_CLIENT_ID
+    const originalClientSecret = process.env.KIRO_OAUTH_CLIENT_SECRET
+    const originalFetch = globalThis.fetch
+    const refreshToken = `aorAAAAAG-${Date.now()}`
+
+    process.env.KIRO_REFRESH_TOKEN = refreshToken
+    delete process.env.KIRO_OAUTH_CLIENT_ID
+    delete process.env.KIRO_OAUTH_CLIENT_SECRET
+
+    let callCount = 0
+    globalThis.fetch = async (url, init) => {
+      callCount += 1
+      assert.equal(String(url), 'https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken')
+      assert.equal(init?.method, 'POST')
+      assert.equal(init?.headers?.['Content-Type'], 'application/json')
+      const body = JSON.parse(String(init?.body || '{}'))
+      assert.equal(body.refreshToken, refreshToken)
+      return new Response(JSON.stringify({
+        accessToken: 'oauth-access-token',
+        refreshToken,
+        expiresIn: 3600,
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+
+    try {
+      const tokenA = await resolveKiroOAuthAccessToken({ providers: {} })
+      const tokenB = await resolveKiroOAuthAccessToken({ providers: {} })
+      assert.equal(tokenA, 'oauth-access-token')
+      assert.equal(tokenB, 'oauth-access-token')
+      assert.equal(callCount, 1)
+    } finally {
+      globalThis.fetch = originalFetch
+      if (originalRefreshToken === undefined) delete process.env.KIRO_REFRESH_TOKEN
+      else process.env.KIRO_REFRESH_TOKEN = originalRefreshToken
+      if (originalClientId === undefined) delete process.env.KIRO_OAUTH_CLIENT_ID
+      else process.env.KIRO_OAUTH_CLIENT_ID = originalClientId
+      if (originalClientSecret === undefined) delete process.env.KIRO_OAUTH_CLIENT_SECRET
+      else process.env.KIRO_OAUTH_CLIENT_SECRET = originalClientSecret
     }
   })
 
