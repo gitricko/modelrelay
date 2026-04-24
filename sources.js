@@ -309,6 +309,14 @@ export const sources = {
       ["arcee-ai/trinity-large-preview", "Trinity Large", "128k"]
     ]
   },
+  "kiro": {
+    "name": "Kiro",
+    "url": "https://runtime.us-east-1.kiro.dev/v1/chat/completions",
+    "models": [
+      ["claude-sonnet-4.5", "Claude Sonnet 4.5", "200k"],
+      ["claude-haiku-4.5", "Claude Haiku 4.5", "200k"]
+    ]
+  },
   "googleai": {
     "name": "Google AI",
     "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",

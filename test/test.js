@@ -136,6 +136,12 @@ describe('sources data integrity', () => {
     assert.ok(Array.isArray(sources.opencode.models))
   })
 
+  it('includes Kiro provider', () => {
+    assert.ok(sources.kiro)
+    assert.equal(sources.kiro.name, 'Kiro')
+    assert.ok(Array.isArray(sources.kiro.models))
+  })
+
   it('has expected provider structure', () => {
     for (const [providerKey, provider] of Object.entries(sources)) {
       assert.equal(typeof providerKey, 'string')
@@ -327,6 +333,22 @@ describe('provider api key resolution', () => {
     }
   })
 
+  it('supports Kiro provider env var override', () => {
+    const original = process.env.KIRO_API_KEY
+
+    try {
+      delete process.env.KIRO_API_KEY
+      assert.equal(getApiKey({ apiKeys: {} }, 'kiro'), null)
+
+      process.env.KIRO_API_KEY = 'kiro-env-key'
+      assert.equal(getApiKey({ apiKeys: {} }, 'kiro'), 'kiro-env-key')
+      assert.equal(getApiKey({ apiKeys: { kiro: 'file-key' } }, 'kiro'), 'kiro-env-key')
+    } finally {
+      if (original == null) delete process.env.KIRO_API_KEY
+      else process.env.KIRO_API_KEY = original
+    }
+  })
+
   it('treats OpenCode and KiloCode auth as optional bearer auth providers, and local Ollama as optional', () => {
     assert.equal(isProviderAuthOptional({}, 'opencode'), true)
     assert.equal(isProviderAuthOptional({}, 'kilocode'), true)
@@ -380,6 +402,26 @@ describe('provider api key resolution', () => {
     assert.equal(headers['x-opencode-session'], 'ses_test')
     assert.equal(headers['x-opencode-request'], 'req_test')
     assert.equal(headers['x-opencode-client'], 'cli')
+  })
+
+  it('adds Kiro SDK headers to provider requests', () => {
+    const headers = buildProviderRequestHeaders('kiro', {
+      apiKey: 'kiro-key',
+    })
+
+    assert.equal(headers['Content-Type'], 'application/json')
+    assert.equal(headers.Authorization, 'Bearer kiro-key')
+    assert.equal(headers['User-Agent'], 'AWS-SDK-JS/3.0.0 kiro-ide/1.0.0')
+    assert.equal(headers['X-Amz-User-Agent'], 'aws-sdk-js/3.0.0 kiro-ide/1.0.0')
+  })
+
+  it('does not add Kiro SDK headers for non-Kiro providers', () => {
+    const headers = buildProviderRequestHeaders('openrouter', {
+      apiKey: 'openrouter-key',
+    })
+
+    assert.equal(headers['User-Agent'], undefined)
+    assert.equal(headers['X-Amz-User-Agent'], undefined)
   })
 
   it('retries optional providers with bearer auth when an unauthenticated probe is rejected', () => {

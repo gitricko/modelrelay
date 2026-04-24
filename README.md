@@ -22,7 +22,7 @@
 
 - 💸 **Completely Free:** Stop paying for API usage. We seamlessly provide access to robust free models.
 - 🧠 **State-of-the-Art (SOTA) Models:** Out-of-the-box availability for top-tier models including **Kimi K2.5, Minimax M2.5, GLM 5, Deepseek V3.2**, and more.
-- 🏢 **Reliable Providers:** We route requests securely through trusted, high-performance platforms like **NVIDIA, Groq, OpenRouter, OpenCode Zen, Ollama, and Google**.
+- 🏢 **Reliable Providers:** We route requests securely through trusted, high-performance platforms like **NVIDIA, Groq, OpenRouter, OpenCode Zen, Ollama, Kiro, and Google**.
 - ⚡ **Lightning Fast:** The built-in benchmark continually evaluates metrics to pick the fastest and most capable LLM for your request.
 - 🔄 **OpenAI-Compatible:** A perfect drop-in replacement that works seamlessly with your existing tools, scripts, and workflows.
 
@@ -220,7 +220,13 @@ Example:
   - `CODESTRAL_API_KEY`
   - `HYPERBOLIC_API_KEY`
   - `SCALEWAY_API_KEY`
+  - `KIRO_API_KEY`
   - `GOOGLE_API_KEY`
+
+Kiro notes:
+- Base endpoint is preconfigured to `https://runtime.us-east-1.kiro.dev/v1/chat/completions`
+- Current Kiro model IDs include `claude-sonnet-4.5` and `claude-haiku-4.5`
+- Authentication uses `KIRO_API_KEY`
 
 For hosted Ollama, set `OLLAMA_API_KEY` and optionally override `OLLAMA_BASE_URL` / `OLLAMA_MODEL`.
 If you leave the Ollama base URL blank in the UI, modelrelay defaults to `https://ollama.com/v1`.
