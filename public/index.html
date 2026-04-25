@@ -1692,6 +1692,9 @@
 </head>
 
 <body>
+  <div id="local-file-warning" style="display:none; margin:16px auto 0; width:min(1100px, calc(100vw - 32px)); background:var(--status-warning-bg); border:1px solid var(--status-warning-border); color:var(--status-warning-text); border-radius:12px; padding:12px 14px; font-size:0.84rem; line-height:1.5;">
+    This dashboard is being opened as a static <code>file://</code> page. Use <b>http://localhost:7352</b> instead so provider actions and OAuth callbacks can talk to the running ModelRelay server.
+  </div>
   <div id="update-overlay">
     <div class="update-spinner"></div>
     <h2 style="margin: 0 0 10px;">Updating ModelRelay</h2>
@@ -2161,8 +2164,15 @@
       icon.textContent = isDark ? '☀️' : '🌙';
     }
 
+    function updateLocalFileWarning() {
+      const warning = document.getElementById('local-file-warning');
+      if (!warning) return;
+      warning.style.display = window.location.protocol === 'file:' ? 'block' : 'none';
+    }
+
     // Run on DOMContentLoaded to ensure button exists
     document.addEventListener('DOMContentLoaded', updateThemeIcon);
+    document.addEventListener('DOMContentLoaded', updateLocalFileWarning);
 
     let allModels = [];
     let searchTerm = '';
@@ -2181,6 +2191,10 @@
     const PROVIDER_ERROR_MAX_AGE_MS = 120 * 60_000;
     let filterRules = { minSweScore: null, excludedProviders: [] };
     let providerRefreshInFlight = new Set();
+    let kiroDeviceAuthState = null;
+    let kiroDevicePollTimer = null;
+    let kiroBrowserAuthState = null;
+    let kiroUiMessage = null;
     let chatMessages = [];
     let chatInFlight = false;
     let chatSelectedModel = 'auto-fastest';
@@ -3761,6 +3775,115 @@
           const section = document.createElement('div');
           const isRefreshing = providerRefreshInFlight.has(p.key);
           section.className = 'provider-section';
+          if (p.key === 'kiro') {
+            const kiroStatusOk = p.hasKey;
+            const kiroStatusBg = kiroStatusOk ? 'var(--status-success-bg)' : 'var(--status-warning-bg)';
+            const kiroStatusColor = kiroStatusOk ? 'var(--status-success-text)' : 'var(--status-warning-text)';
+            const kiroProviderLabel = p.authProvider === 'github' ? 'GitHub' : 'Google';
+            let kiroStatusText = 'No refresh token';
+            if (p.authMode === 'builder-id') {
+              kiroStatusText = p.authEmail
+                ? `AWS Builder ID · ${p.authEmail}`
+                : 'AWS Builder ID connected';
+            } else if (p.authMode === 'browser-oauth') {
+              kiroStatusText = p.authEmail
+                ? `Browser OAuth · ${p.authEmail}`
+                : `Browser OAuth via ${kiroProviderLabel}`;
+            } else if (kiroStatusOk) {
+              kiroStatusText = 'Refresh token configured';
+            }
+
+            const kiroMessageHtml = kiroUiMessage
+              ? `<div id="kiro-ui-message" style="margin-top:12px; padding:10px 12px; border-radius:8px; font-size:0.8rem; border:1px solid ${kiroUiMessage.tone === 'error' ? 'var(--status-error-border)' : kiroUiMessage.tone === 'success' ? 'var(--status-success-border)' : 'var(--border)'}; background:${kiroUiMessage.tone === 'error' ? 'var(--status-error-bg)' : kiroUiMessage.tone === 'success' ? 'var(--status-success-bg)' : 'var(--input-bg-alt)'}; color:${kiroUiMessage.tone === 'error' ? 'var(--status-error-text)' : kiroUiMessage.tone === 'success' ? 'var(--status-success-text)' : 'var(--text)'};">${escapeHtml(kiroUiMessage.text)}</div>`
+              : '<div id="kiro-ui-message" style="display:none;"></div>';
+
+            const kiroDeviceAuthHtml = kiroDeviceAuthState ? `
+              <div style="margin-top:14px; padding:12px 14px; background:var(--input-bg-alt); border:1px solid var(--border); border-radius:10px;">
+                <div style="font-size:0.82rem; font-weight:700; color:var(--text); margin-bottom:6px;">AWS Builder ID authorization in progress</div>
+                <div style="font-size:0.76rem; color:var(--text-muted); margin-bottom:10px;">Approve the request in the opened browser window, or open the verification link below on another device and enter the code.</div>
+                <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+                  <input type="text" id="kiro-device-verify-url" readonly value="${escapeHtml(kiroDeviceAuthState.verificationUriComplete || kiroDeviceAuthState.verificationUri || '')}" style="flex:1; background:var(--input-bg); color:var(--text); font-size:0.76rem;">
+                  <button onclick="copyKiroDeviceVerificationUrl()" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.78rem; font-weight:600; white-space:nowrap;">Copy Link</button>
+                </div>
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+                  <div style="padding:8px 12px; border-radius:8px; border:1px dashed var(--border-subtle); background:var(--card); color:var(--text); font-size:0.85rem; font-weight:700; letter-spacing:0.08em;">${escapeHtml(kiroDeviceAuthState.userCode || '')}</div>
+                  <button onclick="copyKiroDeviceUserCode()" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.78rem; font-weight:600;">Copy Code</button>
+                  <span style="font-size:0.74rem; color:var(--text-muted);">Polling every ${escapeHtml(String(kiroDeviceAuthState.interval || 5))}s</span>
+                </div>
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                  <button onclick="window.open(${JSON.stringify(kiroDeviceAuthState.verificationUriComplete || '')}, 'kiro_builder_id_verify')" style="border:1px solid var(--status-success-border); background:var(--status-success-bg); color:var(--status-success-text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.78rem; font-weight:600;">Open Verification Page</button>
+                  <button onclick="cancelKiroDeviceAuth()" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.78rem; font-weight:600;">Cancel</button>
+                </div>
+              </div>
+            ` : '';
+
+            const kiroBrowserAuthHtml = kiroBrowserAuthState ? `
+              <div style="margin-top:14px; padding:12px 14px; background:var(--input-bg-alt); border:1px solid var(--border); border-radius:10px;">
+                <div style="font-size:0.82rem; font-weight:700; color:var(--text); margin-bottom:6px;">Browser OAuth (${kiroBrowserAuthState.provider === 'github' ? 'GitHub' : 'Google'})</div>
+                <div style="font-size:0.76rem; color:var(--text-muted); margin-bottom:10px;">After approval, the popup may end on a blank or unsupported page because Kiro redirects to a <code>kiro://</code> URL. Copy that full URL from the address bar and paste it below.</div>
+                <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+                  <input type="text" id="kiro-auth-url" readonly value="${escapeHtml(kiroBrowserAuthState.authUrl)}" style="flex:1; background:var(--input-bg); color:var(--text); font-size:0.76rem;">
+                  <button onclick="copyKiroAuthUrl()" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.78rem; font-weight:600; white-space:nowrap;">Copy Link</button>
+                </div>
+                <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+                  <input type="text" id="kiro-callback-url" placeholder="kiro://kiro.kiroAgent/authenticate-success?code=..." style="flex:1; background:var(--input-bg); color:var(--text); font-size:0.76rem;">
+                </div>
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                  <button onclick="completeKiroBrowserAuth()" style="border:1px solid var(--status-success-border); background:var(--status-success-bg); color:var(--status-success-text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.78rem; font-weight:600;">Connect Account</button>
+                  <button onclick="cancelKiroBrowserAuth()" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.78rem; font-weight:600;">Cancel</button>
+                </div>
+              </div>
+            ` : '';
+
+            section.innerHTML = `
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.75rem;">
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                  <span style="background:${kiroStatusBg}; color:${kiroStatusColor}; border-radius:999px; padding:2px 10px; font-size:0.75rem; font-weight:600;">${kiroStatusOk ? '✅' : '⚠️'} ${escapeHtml(kiroStatusText)}</span>
+                  <h3 style="margin:0; font-size:1rem;">${p.name}</h3>
+                  <button class="provider-model-refresh-btn ${isRefreshing ? 'is-loading' : ''}" ${isRefreshing ? 'disabled' : ''} onclick='refreshProviderModels(${JSON.stringify(p.key)}, ${JSON.stringify(p.name)})' title="Refresh provider models">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+                      <polyline points="21 3 21 9 15 9"></polyline>
+                    </svg>
+                    <span>${isRefreshing ? 'Refreshing…' : `${modelCount} model${modelCount !== 1 ? 's' : ''}`}</span>
+                  </button>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <label style="display:flex; align-items:center; gap:6px; font-size:0.8rem; cursor:pointer;">
+                    <input type="checkbox" id="enable-${p.key}" ${p.enabled ? 'checked' : ''} onchange="updateProvider('${p.key}')">
+                    Enabled
+                  </label>
+                </div>
+              </div>
+              <div style="font-size:0.82rem; color:var(--text-muted); margin:0 0 12px 0;">Connect Kiro with AWS Builder ID device authorization, import a token from the AWS SSO cache, or paste a refresh token manually.</div>
+              <div style="margin:0 0 12px 0; padding:10px 12px; background:var(--status-info-bg); border:1px solid var(--status-info-border); border-radius:8px; color:var(--status-info-text); font-size:0.78rem; line-height:1.45;">
+                Recommended: <b>AWS Builder ID</b>. It opens the AWS verification page and waits for approval, which is the same supported Kiro path OmniRoute uses. This avoids the broken <code>kiro://</code> browser handoff.
+              </div>
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+                <button onclick="startKiroBuilderIdAuth()" style="border:1px solid var(--status-success-border); background:var(--status-success-bg); color:var(--status-success-text); cursor:pointer; padding:8px 12px; border-radius:8px; font-size:0.78rem; font-weight:600;">Connect with AWS Builder ID</button>
+                <button onclick="autoImportKiroToken()" style="border:1px solid var(--status-success-border); background:var(--status-success-bg); color:var(--status-success-text); cursor:pointer; padding:8px 12px; border-radius:8px; font-size:0.78rem; font-weight:600;">Auto-import from AWS cache</button>
+              </div>
+              <div class="form-group" style="display:flex; gap:8px; align-items:center;">
+                <input type="password" id="key-${p.key}" placeholder="${p.hasKey ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (Refresh Token Configured)' : 'Paste Kiro refresh token...'}" style="flex:1; background:var(--input-bg); color:var(--text);" onkeydown="if(event.key==='Enter'){event.preventDefault(); saveKiroRefreshToken();}">
+                <button onclick="const i=document.getElementById('key-${p.key}'); i.type=i.type==='password'?'text':'password'; this.textContent=i.type==='password'?'👁':'🙈';" style="border:1px solid var(--border); background:var(--input-bg); color:var(--text); cursor:pointer; padding:8px 10px; border-radius:6px; font-size:0.85rem; white-space:nowrap;">👁</button>
+                <button onclick="saveKiroRefreshToken()" style="border:1px solid var(--status-success-border); background:var(--status-success-bg); color:var(--status-success-text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.8rem; font-weight:600; white-space:nowrap;">Save Token</button>
+                ${p.hasKey ? `<button onclick="deleteProviderKey('${p.key}')" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:8px 12px; border-radius:6px; font-size:0.8rem; font-weight:600; white-space:nowrap;">Delete Token</button>` : ''}
+              </div>
+              <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">ModelRelay stores the resulting Kiro refresh token locally in your ModelRelay config. Auto-import/manual token are still useful if Kiro is already signed in on this machine.</div>
+              ${kiroDeviceAuthHtml}
+              ${kiroBrowserAuthHtml}
+              ${kiroMessageHtml}
+              <div class="form-group" style="display:flex; gap:8px; align-items:center; margin-top:12px;">
+                <span style="font-size:0.75rem; color:var(--text-muted); white-space:nowrap;">Ping interval (min):</span>
+                <input type="number" id="ping-interval-${p.key}" min="1" step="1" value="${p.pingIntervalMinutes || ''}" placeholder="30" style="width:70px; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.8rem; background:var(--input-bg); color:var(--text);" onchange="updateProviderPingInterval('${p.key}')">
+                <span style="font-size:0.75rem; color:var(--text-muted);">(default: 30)</span>
+              </div>
+              ${providerErrorHtml}
+              ${rateLimitHtml}
+            `;
+            container.appendChild(section);
+            return;
+          }
           section.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.75rem;">
               <div style="display:flex; align-items:center; gap:10px;">
@@ -4054,6 +4177,320 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ providerKey: key, useBearerAuth })
       });
+    }
+
+    function setKiroUiMessage(text, tone = 'info') {
+      kiroUiMessage = text ? { text, tone } : null;
+      const el = document.getElementById('kiro-ui-message');
+      if (!el) return;
+      if (!kiroUiMessage) {
+        el.style.display = 'none';
+        el.textContent = '';
+        return;
+      }
+      el.style.display = 'block';
+      el.textContent = kiroUiMessage.text;
+      el.style.border = `1px solid ${tone === 'error' ? 'var(--status-error-border)' : tone === 'success' ? 'var(--status-success-border)' : 'var(--border)'}`;
+      el.style.background = tone === 'error' ? 'var(--status-error-bg)' : tone === 'success' ? 'var(--status-success-bg)' : 'var(--input-bg-alt)';
+      el.style.color = tone === 'error' ? 'var(--status-error-text)' : tone === 'success' ? 'var(--status-success-text)' : 'var(--text)';
+      el.style.marginTop = '12px';
+      el.style.padding = '10px 12px';
+      el.style.borderRadius = '8px';
+      el.style.fontSize = '0.8rem';
+    }
+
+    function clearKiroDevicePollTimer() {
+      if (kiroDevicePollTimer) {
+        clearTimeout(kiroDevicePollTimer);
+        kiroDevicePollTimer = null;
+      }
+    }
+
+    async function copyKiroDeviceVerificationUrl() {
+      const input = document.getElementById('kiro-device-verify-url');
+      const value = input ? input.value.trim() : '';
+      if (!value) return;
+      try {
+        await navigator.clipboard.writeText(value);
+        setKiroUiMessage('Copied the AWS Builder ID verification link.', 'success');
+      } catch {
+        setKiroUiMessage('Clipboard copy failed. Copy the AWS Builder ID verification link manually.', 'error');
+      }
+    }
+
+    async function copyKiroDeviceUserCode() {
+      const value = kiroDeviceAuthState && kiroDeviceAuthState.userCode ? kiroDeviceAuthState.userCode : '';
+      if (!value) return;
+      try {
+        await navigator.clipboard.writeText(value);
+        setKiroUiMessage('Copied the AWS Builder ID code.', 'success');
+      } catch {
+        setKiroUiMessage('Clipboard copy failed. Copy the AWS Builder ID code manually.', 'error');
+      }
+    }
+
+    function cancelKiroDeviceAuth() {
+      clearKiroDevicePollTimer();
+      kiroDeviceAuthState = null;
+      setKiroUiMessage('Cancelled AWS Builder ID authorization.', 'info');
+      loadSettings();
+    }
+
+    async function pollKiroBuilderIdAuth() {
+      if (!kiroDeviceAuthState) return;
+
+      const now = Date.now();
+      if (kiroDeviceAuthState.expiresAt && now >= kiroDeviceAuthState.expiresAt) {
+        clearKiroDevicePollTimer();
+        kiroDeviceAuthState = null;
+        setKiroUiMessage('AWS Builder ID authorization expired. Start it again to get a new code.', 'error');
+        await loadSettings();
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/oauth/kiro/poll', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            deviceCode: kiroDeviceAuthState.deviceCode,
+            clientId: kiroDeviceAuthState.clientId,
+            clientSecret: kiroDeviceAuthState.clientSecret,
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || 'Failed while polling AWS Builder ID authorization.');
+        }
+
+        if (data.success) {
+          clearKiroDevicePollTimer();
+          kiroDeviceAuthState = null;
+          setKiroUiMessage(data.email ? `Connected Kiro via AWS Builder ID as ${data.email}.` : 'Connected Kiro via AWS Builder ID.', 'success');
+          await loadSettings();
+          await fetchData();
+          return;
+        }
+
+        if (data.pending) {
+          const nextInterval = data.error === 'slow_down'
+            ? Math.max(5, Number(kiroDeviceAuthState.interval || 5) + 5)
+            : Math.max(5, Number(kiroDeviceAuthState.interval || 5));
+          kiroDeviceAuthState = { ...kiroDeviceAuthState, interval: nextInterval };
+          clearKiroDevicePollTimer();
+          kiroDevicePollTimer = setTimeout(() => {
+            pollKiroBuilderIdAuth().catch(err => {
+              setKiroUiMessage(err.message || 'Failed while polling AWS Builder ID authorization.', 'error');
+            });
+          }, nextInterval * 1000);
+          return;
+        }
+
+        clearKiroDevicePollTimer();
+        kiroDeviceAuthState = null;
+        setKiroUiMessage(data.errorDescription || data.error || 'AWS Builder ID authorization failed.', 'error');
+        await loadSettings();
+      } catch (err) {
+        clearKiroDevicePollTimer();
+        kiroDeviceAuthState = null;
+        setKiroUiMessage(err.message || 'Failed while polling AWS Builder ID authorization.', 'error');
+        await loadSettings();
+      }
+    }
+
+    async function startKiroBuilderIdAuth() {
+      clearKiroDevicePollTimer();
+      try {
+        setKiroUiMessage('Preparing AWS Builder ID authorization...', 'info');
+        const res = await fetch('/api/oauth/kiro/device-code');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || 'Failed to start AWS Builder ID authorization.');
+        }
+
+        kiroDeviceAuthState = {
+          deviceCode: data.deviceCode,
+          userCode: data.userCode,
+          verificationUri: data.verificationUri,
+          verificationUriComplete: data.verificationUriComplete,
+          interval: Math.max(5, Number(data.interval || 5)),
+          clientId: data.clientId,
+          clientSecret: data.clientSecret,
+          expiresAt: Date.now() + (Math.max(60, Number(data.expiresIn || 600)) * 1000),
+        };
+        kiroBrowserAuthState = null;
+        await loadSettings();
+
+        const verifyUrl = data.verificationUriComplete || data.verificationUri;
+        if (verifyUrl) {
+          window.open(verifyUrl, 'kiro_builder_id_verify');
+        }
+        setKiroUiMessage('Opened the AWS Builder ID verification page. Approve the request there and ModelRelay will finish the connection automatically.', 'info');
+        pollKiroBuilderIdAuth().catch(err => {
+          setKiroUiMessage(err.message || 'Failed while polling AWS Builder ID authorization.', 'error');
+        });
+      } catch (err) {
+        kiroDeviceAuthState = null;
+        setKiroUiMessage(err.message || 'Failed to start AWS Builder ID authorization.', 'error');
+      }
+    }
+
+    async function startKiroBrowserAuth(provider) {
+      const providerLabel = provider === 'github' ? 'GitHub' : 'Google';
+      const popup = window.open('', 'kiro_social_auth');
+      clearKiroDevicePollTimer();
+      kiroDeviceAuthState = null;
+      try {
+        setKiroUiMessage(`Preparing ${providerLabel} browser OAuth. This only works if your machine can open kiro:// links.`, 'info');
+        const res = await fetch(`/api/oauth/kiro/social-authorize?provider=${encodeURIComponent(provider)}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || `Failed to start Kiro ${providerLabel} OAuth.`);
+        }
+
+        kiroBrowserAuthState = {
+          provider,
+          authUrl: data.authUrl,
+          codeVerifier: data.codeVerifier,
+          state: data.state,
+        };
+        await loadSettings();
+        setKiroUiMessage(`Opened the ${providerLabel} login. If the popup reports that kiro:// has no registered handler, this machine cannot complete browser OAuth and you should use AWS cache import or a manual refresh token instead.`, 'info');
+        if (popup) {
+          popup.location = data.authUrl;
+        } else {
+          window.open(data.authUrl, 'kiro_social_auth');
+          setKiroUiMessage(`Popup blocked. Open the copied ${providerLabel} auth link manually, then paste the callback URL below.`, 'info');
+        }
+      } catch (err) {
+        if (popup && !popup.closed) popup.close();
+        setKiroUiMessage(err.message || `Failed to start Kiro ${providerLabel} OAuth.`, 'error');
+      }
+    }
+
+    async function copyKiroAuthUrl() {
+      const input = document.getElementById('kiro-auth-url');
+      const value = input ? input.value.trim() : '';
+      if (!value) return;
+      try {
+        await navigator.clipboard.writeText(value);
+        setKiroUiMessage('Copied the Kiro auth link to your clipboard.', 'success');
+      } catch {
+        setKiroUiMessage('Clipboard copy failed. Copy the Kiro auth link manually.', 'error');
+      }
+    }
+
+    function cancelKiroBrowserAuth() {
+      kiroBrowserAuthState = null;
+      setKiroUiMessage(null);
+      loadSettings();
+    }
+
+    async function completeKiroBrowserAuth() {
+      if (!kiroBrowserAuthState) return;
+      const input = document.getElementById('kiro-callback-url');
+      const callbackUrl = input ? input.value.trim() : '';
+      if (!callbackUrl) {
+        setKiroUiMessage('Paste the full Kiro callback URL first.', 'error');
+        return;
+      }
+
+      try {
+        const url = new URL(callbackUrl);
+        const errorParam = url.searchParams.get('error');
+        if (errorParam) {
+          throw new Error(url.searchParams.get('error_description') || errorParam);
+        }
+
+        const code = url.searchParams.get('code');
+        const state = url.searchParams.get('state');
+        if (!code) {
+          throw new Error('No authorization code found in the callback URL.');
+        }
+        if (kiroBrowserAuthState.state && state && state !== kiroBrowserAuthState.state) {
+          throw new Error('The callback state did not match the login request. Start the flow again.');
+        }
+
+        setKiroUiMessage('Exchanging Kiro authorization code...');
+        const res = await fetch('/api/oauth/kiro/social-exchange', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            provider: kiroBrowserAuthState.provider,
+            code,
+            codeVerifier: kiroBrowserAuthState.codeVerifier,
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Failed to complete Kiro browser OAuth.');
+        }
+
+        kiroBrowserAuthState = null;
+        setKiroUiMessage(data.email ? `Connected Kiro as ${data.email}.` : 'Connected Kiro successfully.', 'success');
+        await loadSettings();
+        await fetchData();
+      } catch (err) {
+        setKiroUiMessage(err.message || 'Failed to complete Kiro browser OAuth.', 'error');
+      }
+    }
+
+    async function autoImportKiroToken() {
+      try {
+        setKiroUiMessage('Looking for a Kiro refresh token in ~/.aws/sso/cache...');
+        const res = await fetch('/api/oauth/kiro/auto-import');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.found || !data.refreshToken) {
+          throw new Error(data.error || 'No Kiro refresh token found in ~/.aws/sso/cache.');
+        }
+
+        const saveRes = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ providerKey: 'kiro', apiKey: data.refreshToken })
+        });
+        if (!saveRes.ok) {
+          throw new Error('Found a token, but failed to save it.');
+        }
+
+        clearKiroDevicePollTimer();
+        kiroDeviceAuthState = null;
+        kiroBrowserAuthState = null;
+        setKiroUiMessage('Imported your Kiro refresh token from the AWS cache.', 'success');
+        await loadSettings();
+        await fetchData();
+      } catch (err) {
+        setKiroUiMessage(err.message || 'Failed to auto-import a Kiro refresh token.', 'error');
+      }
+    }
+
+    async function saveKiroRefreshToken() {
+      const input = document.getElementById('key-kiro');
+      const value = input ? input.value.trim() : '';
+      if (!value) {
+        setKiroUiMessage('Paste a Kiro refresh token before saving.', 'error');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ providerKey: 'kiro', apiKey: value })
+        });
+        if (!res.ok) {
+          throw new Error('Failed to save the Kiro refresh token.');
+        }
+        if (input) input.value = '';
+        clearKiroDevicePollTimer();
+        kiroDeviceAuthState = null;
+        kiroBrowserAuthState = null;
+        setKiroUiMessage('Saved the Kiro refresh token.', 'success');
+        await loadSettings();
+        await fetchData();
+      } catch (err) {
+        setKiroUiMessage(err.message || 'Failed to save the Kiro refresh token.', 'error');
+      }
     }
 
     function loadChatState() {
@@ -4859,4 +5296,3 @@
 </body>
 
 </html>
-

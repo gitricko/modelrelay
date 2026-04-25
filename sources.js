@@ -311,7 +311,7 @@ export const sources = {
   },
   "kiro": {
     "name": "Kiro",
-    "url": "https://runtime.us-east-1.kiro.dev/v1/chat/completions",
+    "url": "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",
     "models": [
       ["claude-sonnet-4.5", "Claude Sonnet 4.5", "200k"],
       ["claude-haiku-4.5", "Claude Haiku 4.5", "200k"]
