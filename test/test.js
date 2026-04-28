@@ -1269,6 +1269,21 @@ describe('model grouping and filtering', () => {
     const filtered = filterModelsByRequested(results, 'auto-fastest', canonicalizeModelId)
     assert.equal(filtered.length, 3)
   })
+
+  it('returns all models for openai/auto-fastest (PicoClaw style)', () => {
+    const filtered = filterModelsByRequested(results, 'openai/auto-fastest', canonicalizeModelId)
+    assert.equal(filtered.length, 3)
+  })
+
+  it('returns all models for router/auto-fastest (OpenCode style)', () => {
+    const filtered = filterModelsByRequested(results, 'router/auto-fastest', canonicalizeModelId)
+    assert.equal(filtered.length, 3)
+  })
+
+  it('returns all models for modelrelay/auto-fastest (OpenClaw style)', () => {
+    const filtered = filterModelsByRequested(results, 'modelrelay/auto-fastest', canonicalizeModelId)
+    assert.equal(filtered.length, 3)
+  })
 })
 
 describe('pinned model routing', () => {
