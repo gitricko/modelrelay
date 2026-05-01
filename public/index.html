@@ -3753,17 +3753,23 @@
           const showsBaseUrlFields = p.isOpenAICompatibleInstance || p.key === 'ollama';
           const baseUrlPlaceholder = p.key === 'ollama' ? 'https://ollama.com/v1' : 'https://your-endpoint.example/v1';
           const baseUrlNote = p.isOpenAICompatibleInstance
-            ? 'Set the upstream base URL and exact model ID for this endpoint.'
+            ? 'Set the upstream base URL for this endpoint. The model id below is optional — leave blank if discovery returns the models you need.'
             : 'Set the upstream base URL and exact model ID for this provider. If base URL is blank, modelrelay uses https://ollama.com/v1 and expects an OLLAMA_API_KEY.';
           const openAiCompatibleFieldsHtml = showsBaseUrlFields ? `
             <div class="form-group" style="display:flex; gap:8px; align-items:center; margin-top:8px;">
               <input type="text" id="base-url-${p.key}" value="${escapeHtml(p.baseUrl || '')}" placeholder="${baseUrlPlaceholder}" style="flex:1;" onblur="updateProviderBaseUrl('${p.key}')">
             </div>
             <div class="form-group" style="display:flex; gap:8px; align-items:center; margin-top:8px;">
-              <input type="text" id="model-id-${p.key}" value="${escapeHtml(p.modelId || '')}" placeholder="upstream-model-id" style="flex:1;" onblur="updateProviderModelId('${p.key}')">
+              <input type="text" id="model-id-${p.key}" value="${escapeHtml(p.modelId || '')}" placeholder="upstream-model-id (optional if discovery is on)" style="flex:1;" onblur="updateProviderModelId('${p.key}')">
             </div>
             <div style="font-size:0.75rem; color:var(--text-muted); margin-top:4px;">${baseUrlNote}</div>
             ${p.isOpenAICompatibleInstance ? `
+              <div style="margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <label style="display:flex; align-items:center; gap:6px; font-size:0.8rem; cursor:pointer;">
+                  <input type="checkbox" id="discover-${p.key}" ${p.discoverModels !== false ? 'checked' : ''} onchange="updateProviderDiscoverModels('${p.key}')">
+                  Discover models from <code>/v1/models</code>
+                </label>
+              </div>
               <div style="margin-top:10px; display:flex; justify-content:flex-end;">
                 <button onclick="removeOpenAICompatibleEndpoint('${escapeHtml(p.openAICompatibleInstanceId)}', ${JSON.stringify(p.name)})" style="border:1px solid var(--status-error-border); background:var(--status-error-bg); color:var(--status-error-text); cursor:pointer; padding:6px 12px; border-radius:6px; font-size:0.78rem; font-weight:600;">Remove Endpoint</button>
               </div>
@@ -3899,7 +3905,7 @@
       const name = prompt('Endpoint name (e.g. "my-vllm")');
       if (!name || !name.trim()) return;
       const baseUrl = prompt('Base URL (e.g. https://your-host/v1)') || '';
-      const modelId = prompt('Upstream model id (exact)') || '';
+      const modelId = prompt('Upstream model id (optional — leave blank to rely on /v1/models discovery)') || '';
       const apiKey = prompt('API key (leave blank if not required)') || '';
       const resp = await fetch('/api/openai-compatible/endpoints', {
         method: 'POST',
@@ -3913,6 +3919,17 @@
         return;
       }
       await loadSettings();
+      await fetchData();
+    }
+
+    async function updateProviderDiscoverModels(key) {
+      const cb = document.getElementById(`discover-${key}`);
+      const discoverModels = cb ? !!cb.checked : true;
+      await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerKey: key, discoverModels })
+      });
       await fetchData();
     }
 

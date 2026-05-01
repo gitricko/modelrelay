@@ -232,6 +232,7 @@ If you point Ollama at a local host such as `http://127.0.0.1:11434`, modelrelay
 modelrelay supports configuring multiple OpenAI-compatible upstream endpoints (vLLM, llama.cpp, custom relays, etc.). Each endpoint exposes a single model id and is routed independently.
 
 - In the Web UI, click `+ Add Endpoint` under the **OpenAI-Compatible endpoints** group, supply a name, base URL, model id, and optional API key. Each endpoint then gets its own provider row with status, ping, and rate-limit information.
+- modelrelay automatically probes `/v1/models` on each endpoint and exposes every returned model as a routable row. The manually configured model id (if any) is merged in as a fallback. Discovery is on by default and can be toggled per-endpoint with the **"Discover models from `/v1/models`"** checkbox.
 - Endpoints are stored in `~/.modelrelay.json` under composite keys like `openai-compatible:my-vllm`:
   ```jsonc
   {

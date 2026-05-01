@@ -26,7 +26,7 @@ import { normalizeMissingScoreId } from '../lib/score-fetcher.js'
 import { resolveAutostartExecPath, resolveAutostartNodePath } from '../lib/autostart.js'
 import { exportConfigToken, getApiKey, getApiKeyPool, getMaxTurns, getPinningMode, getProviderBaseUrl, getProviderModelId, getProviderPingIntervalMs, hasMultipleKeys, importConfigToken, normalizeConfigShape, isOpenAICompatibleInstanceKey, getBaseProviderKey, getOpenAICompatibleInstanceId, buildOpenAICompatibleInstanceKey, listOpenAICompatibleEndpoints, upsertOpenAICompatibleEndpoint, removeOpenAICompatibleEndpoint } from '../lib/config.js'
 import { buildNpmInstallInvocation, buildWindowsPostUpdateRestartCommand, getForcedUpdateVersion, getLocalUpdateTarballPath, getLocalUpdateVersion, isRunningFromSource, shouldStopAutostartBeforeUpdate } from '../lib/update.js'
-import { buildOpencodeHeaders, buildOpencodeProjectId, buildProviderRequestHeaders, extractOllamaModelRecords, getAccountStatus, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, providerWantsBearerAuth, shouldRetryOptionalProviderWithBearer, toOllamaModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta } from '../lib/server.js'
+import { buildOpencodeHeaders, buildOpencodeProjectId, buildProviderRequestHeaders, extractOllamaModelRecords, extractOpenAICompatibleModelRecords, buildOpenAICompatibleModelsListUrl, getAccountStatus, getPinnedModelCandidate, getPinnedModelMatches, isProviderAuthOptional, isProviderBearerAuthEnabled, providerWantsBearerAuth, shouldRetryOptionalProviderWithBearer, toOllamaModelMeta, toOpenAICompatibleDiscoveredModelMeta, toOpenCodeModelMeta, toOpenRouterModelMeta, toKiloCodeModelMeta } from '../lib/server.js'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 
@@ -1662,6 +1662,18 @@ describe('OpenAI-compatible multi-instance support', () => {
     assert.equal(removeOpenAICompatibleEndpoint(config, 'groq'), false)
   })
 
+  it('upsertOpenAICompatibleEndpoint persists discoverModels=false explicitly', () => {
+    const config = { apiKeys: {}, providers: {} }
+    upsertOpenAICompatibleEndpoint(config, { id: 'one', name: 'One', baseUrl: 'http://h/v1' })
+    assert.equal(config.providers['openai-compatible:one'].discoverModels, undefined)
+
+    upsertOpenAICompatibleEndpoint(config, { instanceKey: 'openai-compatible:one', discoverModels: false })
+    assert.equal(config.providers['openai-compatible:one'].discoverModels, false)
+
+    upsertOpenAICompatibleEndpoint(config, { instanceKey: 'openai-compatible:one', discoverModels: true })
+    assert.equal('discoverModels' in config.providers['openai-compatible:one'], false)
+  })
+
   it('config export/import preserves multi-instance shape', () => {
     const original = normalizeConfigShape({
       apiKeys: {
@@ -1681,5 +1693,56 @@ describe('OpenAI-compatible multi-instance support', () => {
     assert.equal(reimported.apiKeys['openai-compatible:beta'], 'sk-b')
     assert.equal(reimported.providers['openai-compatible:alpha'].name, 'Alpha')
     assert.equal(reimported.providers['openai-compatible:beta'].modelId, 'b-model')
+  })
+})
+
+describe('OpenAI-compatible model discovery', () => {
+  it('builds the /v1/models URL from a variety of base URLs', () => {
+    assert.equal(buildOpenAICompatibleModelsListUrl('https://api.example.com'), 'https://api.example.com/v1/models')
+    assert.equal(buildOpenAICompatibleModelsListUrl('https://api.example.com/'), 'https://api.example.com/v1/models')
+    assert.equal(buildOpenAICompatibleModelsListUrl('https://api.example.com/v1'), 'https://api.example.com/v1/models')
+    assert.equal(buildOpenAICompatibleModelsListUrl('https://api.example.com/v1/'), 'https://api.example.com/v1/models')
+    assert.equal(buildOpenAICompatibleModelsListUrl('https://api.example.com/v1/chat/completions'), 'https://api.example.com/v1/models')
+    assert.equal(buildOpenAICompatibleModelsListUrl('https://api.example.com/v1/models'), 'https://api.example.com/v1/models')
+    assert.equal(buildOpenAICompatibleModelsListUrl('api.example.com/v1'), 'https://api.example.com/v1/models')
+    assert.equal(buildOpenAICompatibleModelsListUrl(''), null)
+    assert.equal(buildOpenAICompatibleModelsListUrl(null), null)
+  })
+
+  it('extracts records from common payload shapes', () => {
+    assert.deepEqual(extractOpenAICompatibleModelRecords({ data: [{ id: 'a' }, { id: 'b' }] }), [{ id: 'a' }, { id: 'b' }])
+    assert.deepEqual(extractOpenAICompatibleModelRecords({ models: [{ id: 'a' }] }), [{ id: 'a' }])
+    assert.deepEqual(extractOpenAICompatibleModelRecords([{ id: 'a' }]), [{ id: 'a' }])
+    assert.deepEqual(extractOpenAICompatibleModelRecords({}), [])
+    assert.deepEqual(extractOpenAICompatibleModelRecords(null), [])
+  })
+
+  it('converts a discovered record to a model-meta tagged with the instance key', () => {
+    const meta = toOpenAICompatibleDiscoveredModelMeta(
+      { id: 'qwen2.5-coder:7b', context_length: 32768, name: 'Qwen2.5 Coder 7B' },
+      'openai-compatible:my-vllm',
+      'https://host/v1/chat/completions',
+    )
+    assert.ok(meta)
+    assert.equal(meta.modelId, 'qwen2.5-coder:7b')
+    assert.equal(meta.label, 'Qwen2.5 Coder 7B')
+    assert.equal(meta.providerKey, 'openai-compatible:my-vllm')
+    assert.equal(meta.providerUrl, 'https://host/v1/chat/completions')
+    // 32768 → "33k" via the shared parser
+    assert.equal(meta.ctx, '33k')
+  })
+
+  it('falls back to a synthesized label when the record has none', () => {
+    const meta = toOpenAICompatibleDiscoveredModelMeta({ id: 'some_unknown-model' }, 'openai-compatible:x')
+    assert.ok(meta)
+    assert.equal(meta.modelId, 'some_unknown-model')
+    assert.equal(meta.label, 'Some Unknown Model')
+    assert.equal(meta.isEstimatedScore, true)
+  })
+
+  it('rejects records without a usable id', () => {
+    assert.equal(toOpenAICompatibleDiscoveredModelMeta({}, 'openai-compatible:x'), null)
+    assert.equal(toOpenAICompatibleDiscoveredModelMeta({ id: '   ' }, 'openai-compatible:x'), null)
+    assert.equal(toOpenAICompatibleDiscoveredModelMeta('', 'openai-compatible:x'), null)
   })
 })
