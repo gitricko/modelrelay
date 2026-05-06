@@ -733,6 +733,34 @@ describe('provider api key resolution', () => {
     assert.equal(data.usage.completion_tokens, 3)
   })
 
+  it('assembles Kiro streaming tool call input.raw fragments into complete arguments', async () => {
+    // Kiro sends toolUseEvent multiple times for the same toolId:
+    // first with {toolUseId, name} announcing the tool, then with {toolUseId, input: {raw: "fragment"}}
+    // carrying partial JSON fragments that must be concatenated.
+    const toolId = 'tool-use-id-123'
+    const bytes = Buffer.concat([
+      Buffer.from(encodeKiroEventFrame('toolUseEvent', { toolUseId: toolId, name: 'exec', input: null })),
+      Buffer.from(encodeKiroEventFrame('toolUseEvent', { toolUseId: toolId, input: { raw: '{"command"' } })),
+      Buffer.from(encodeKiroEventFrame('toolUseEvent', { toolUseId: toolId, input: { raw: ': "echo hi"}' } })),
+      Buffer.from(encodeKiroEventFrame('metricsEvent', { inputTokens: 5, outputTokens: 2 })),
+      Buffer.from(encodeKiroEventFrame('messageStopEvent', {})),
+    ])
+    const response = new Response(bytes, {
+      status: 200,
+      headers: { 'content-type': 'application/vnd.amazon.eventstream' },
+    })
+
+    const transformed = await transformKiroResponse(response, 'claude-haiku-4.5', false)
+    const data = JSON.parse(await transformed.text())
+
+    assert.equal(data.choices[0].finish_reason, 'tool_calls')
+    assert.equal(data.choices[0].message.tool_calls.length, 1)
+    const tc = data.choices[0].message.tool_calls[0]
+    assert.equal(tc.id, toolId)
+    assert.equal(tc.function.name, 'exec')
+    assert.equal(tc.function.arguments, '{"command": "echo hi"}')
+  })
+
   it('does not add Kiro SDK headers for non-Kiro providers', () => {
     const headers = buildProviderRequestHeaders('openrouter', {
       apiKey: 'openrouter-key',
