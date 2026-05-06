@@ -4253,9 +4253,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            deviceCode: kiroDeviceAuthState.deviceCode,
-            clientId: kiroDeviceAuthState.clientId,
-            clientSecret: kiroDeviceAuthState.clientSecret,
+            flowId: kiroDeviceAuthState.flowId,
           })
         });
         const data = await res.json().catch(() => ({}));
@@ -4309,13 +4307,11 @@
         }
 
         kiroDeviceAuthState = {
-          deviceCode: data.deviceCode,
+          flowId: data.flowId,
           userCode: data.userCode,
           verificationUri: data.verificationUri,
           verificationUriComplete: data.verificationUriComplete,
           interval: Math.max(5, Number(data.interval || 5)),
-          clientId: data.clientId,
-          clientSecret: data.clientSecret,
           expiresAt: Date.now() + (Math.max(60, Number(data.expiresIn || 600)) * 1000),
         };
         kiroBrowserAuthState = null;
@@ -4440,17 +4436,8 @@
         setKiroUiMessage('Looking for a Kiro refresh token in ~/.aws/sso/cache...');
         const res = await fetch('/api/oauth/kiro/auto-import');
         const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.found || !data.refreshToken) {
+        if (!res.ok || !data.found) {
           throw new Error(data.error || 'No Kiro refresh token found in ~/.aws/sso/cache.');
-        }
-
-        const saveRes = await fetch('/api/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ providerKey: 'kiro', apiKey: data.refreshToken })
-        });
-        if (!saveRes.ok) {
-          throw new Error('Found a token, but failed to save it.');
         }
 
         clearKiroDevicePollTimer();
