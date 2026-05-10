@@ -13,6 +13,7 @@ import {
   sortResults,
   findBestModel,
   rankModelsForRouting,
+  getRoutingModelKey,
   buildModelGroups,
   filterModelsByRequested,
   isRetryableProxyStatus,
@@ -1203,6 +1204,18 @@ describe('model grouping and filtering', () => {
     assert.equal(groups[0].id, 'minimax-m2.5')
   })
 
+  it('keeps duplicate raw model ids from different providers addressable', () => {
+    const groups = buildModelGroups([
+      mockResult({ modelId: 'llama-3.1', label: 'Llama 3.1', providerKey: 'openai-compatible:local' }),
+      mockResult({ modelId: 'llama-3.1', label: 'Llama 3.1', providerKey: 'openai-compatible:remote' }),
+    ], canonicalizeModelId)
+
+    assert.deepEqual(groups.map(group => group.id).sort(), [
+      'openai-compatible:local/llama-3.1',
+      'openai-compatible:remote/llama-3.1',
+    ])
+  })
+
   it('groups MiMo Omni aliases under one model name', () => {
     const groups = buildModelGroups([
       mockResult({ modelId: 'mimo-v2-omni-free', label: 'MiMo V2 Omni' }),
@@ -1269,6 +1282,17 @@ describe('model grouping and filtering', () => {
     const filtered = filterModelsByRequested(results, 'auto-fastest', canonicalizeModelId)
     assert.equal(filtered.length, 3)
   })
+
+  it('filters duplicate raw model ids by endpoint-qualified group id', () => {
+    const duplicateResults = [
+      mockResult({ modelId: 'llama-3.1', label: 'Llama 3.1', providerKey: 'openai-compatible:local' }),
+      mockResult({ modelId: 'llama-3.1', label: 'Llama 3.1', providerKey: 'openai-compatible:remote' }),
+    ]
+
+    const filtered = filterModelsByRequested(duplicateResults, 'openai-compatible:remote/llama-3.1', canonicalizeModelId)
+
+    assert.deepEqual(filtered.map(r => r.providerKey), ['openai-compatible:remote'])
+  })
 })
 
 describe('pinned model routing', () => {
@@ -1297,6 +1321,18 @@ describe('pinned model routing', () => {
   it('routes to the best eligible provider within a canonical pin group', () => {
     const candidate = getPinnedModelCandidate(results, 'nvidia/glm4.7', 'canonical')
     assert.equal(candidate?.modelId, 'nvidia/glm4.7')
+  })
+
+  it('can retry another provider with the same raw model id', () => {
+    const duplicateResults = [
+      mockResult({ modelId: 'llama-3.1', label: 'Llama 3.1', providerKey: 'openai-compatible:local', pings: [{ ms: 90, code: '200' }], intell: 10 }),
+      mockResult({ modelId: 'llama-3.1', label: 'Llama 3.1', providerKey: 'openai-compatible:remote', pings: [{ ms: 100, code: '200' }], intell: 10 }),
+    ]
+    const first = rankModelsForRouting(duplicateResults)[0]
+    const second = rankModelsForRouting(duplicateResults, [getRoutingModelKey(first)])[0]
+
+    assert.equal(first.providerKey, 'openai-compatible:local')
+    assert.equal(second.providerKey, 'openai-compatible:remote')
   })
 })
 
