@@ -328,7 +328,16 @@ export const sources = {
       ["gemma-3-12b-it", "Gemma 3 12B", "128k"],
       ["gemma-3-4b-it", "Gemma 3 4B", "128k"]
     ]
-  }
+  },
+  "anthropic": {
+    "name": "Anthropic (Compatibility)",
+    "url": "",
+    "models": [
+      ["claude-sonnet-4-5", "Claude Sonnet 4.5", "200k"],
+      ["claude-haiku-4-5",  "Claude Haiku 4.5",  "200k"],
+      ["claude-opus-4-5",   "Claude Opus 4.5",   "200k"]
+    ]
+  },
 }
 
 function buildModels() {
