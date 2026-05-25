@@ -336,6 +336,117 @@ describe('anthropicToOpenAI', () => {
     })
     assert.deepEqual(result._anthropicToolReverseMap, { a_b: 'a/b' })
   })
+
+  it('preserves thinking blocks as reasoning_content for round-trip', () => {
+    const result = anthropicToOpenAI({
+      ...MINIMAL,
+      messages: [
+        { role: 'user', content: 'What is 2+2?' },
+        { role: 'assistant', content: [
+          { type: 'thinking', thinking: 'Simple arithmetic.' },
+          { type: 'text', text: '4' },
+        ]},
+      ],
+    })
+    assert.equal(result.messages.length, 2)
+    assert.equal(result.messages[1].role, 'assistant')
+    assert.equal(result.messages[1].reasoning_content, 'Simple arithmetic.')
+    assert.equal(result.messages[1].content, '4')
+  })
+
+  it('handles thinking block without text content', () => {
+    const result = anthropicToOpenAI({
+      ...MINIMAL,
+      messages: [
+        { role: 'user', content: 'Think out loud' },
+        { role: 'assistant', content: [
+          { type: 'thinking', thinking: 'I am thinking through this step by step.' },
+        ]},
+      ],
+    })
+    assert.equal(result.messages.length, 2)
+    assert.equal(result.messages[1].role, 'assistant')
+    assert.equal(result.messages[1].reasoning_content, 'I am thinking through this step by step.')
+    assert.equal(result.messages[1].content, '')
+  })
+
+  it('converts tool_result blocks in content array to tool role', () => {
+    const result = anthropicToOpenAI({
+      ...MINIMAL,
+      messages: [
+        { role: 'user', content: 'Calculate 2+2' },
+        { role: 'assistant', content: [
+          { type: 'tool_use', id: 'tu_001', name: 'calculator', input: { a: 2, b: 2 } },
+        ]},
+        { role: 'user', content: [
+          { type: 'tool_result', tool_use_id: 'tu_001', content: '4' },
+        ]},
+      ],
+    })
+    assert.equal(result.messages.length, 3)
+    assert.equal(result.messages[2].role, 'tool')
+    assert.equal(result.messages[2].content, '4')
+    assert.equal(result.messages[2].tool_call_id, 'tu_001')
+  })
+
+  it('converts tool_result with array content (text blocks)', () => {
+    const result = anthropicToOpenAI({
+      ...MINIMAL,
+      messages: [
+        { role: 'user', content: 'Search for X' },
+        { role: 'assistant', content: [
+          { type: 'tool_use', id: 'tu_002', name: 'search', input: { q: 'X' } },
+        ]},
+        { role: 'user', content: [
+          { type: 'tool_result', tool_use_id: 'tu_002', content: [
+            { type: 'text', text: 'Result page 1' },
+            { type: 'text', text: 'Result page 2' },
+          ]},
+        ]},
+      ],
+    })
+    assert.equal(result.messages.length, 3)
+    assert.equal(result.messages[2].role, 'tool')
+    assert.equal(result.messages[2].content, 'Result page 1\nResult page 2')
+    assert.equal(result.messages[2].tool_call_id, 'tu_002')
+  })
+
+  it('maps tool_choice {type: "any"} to "auto"', () => {
+    const result = anthropicToOpenAI({
+      ...MINIMAL,
+      tools: [{ name: 'calc', description: 'Add', input_schema: { type: 'object', properties: {} } }],
+      tool_choice: { type: 'any' },
+    })
+    assert.equal(result.tool_choice, 'auto')
+  })
+
+  it('maps tool_choice {type: "auto"} to "auto"', () => {
+    const result = anthropicToOpenAI({
+      ...MINIMAL,
+      tools: [{ name: 'calc', description: 'Add', input_schema: { type: 'object', properties: {} } }],
+      tool_choice: { type: 'auto' },
+    })
+    assert.equal(result.tool_choice, 'auto')
+  })
+
+  it('maps tool_choice {type: "tool", name: "calc"} to OpenAI function format', () => {
+    const result = anthropicToOpenAI({
+      ...MINIMAL,
+      tools: [{ name: 'calc', description: 'Add', input_schema: { type: 'object', properties: {} } }],
+      tool_choice: { type: 'tool', name: 'calc' },
+    })
+    assert.deepEqual(result.tool_choice, { type: 'function', function: { name: 'calc' } })
+  })
+
+  it('sanitizes tool names in tool_choice and tools array', () => {
+    const result = anthropicToOpenAI({
+      ...MINIMAL,
+      tools: [{ name: 'my/custom@tool', description: 'Test', input_schema: { type: 'object', properties: {} } }],
+      tool_choice: { type: 'tool', name: 'my/custom@tool' },
+    })
+    assert.equal(result.tools[0].function.name, 'my_custom_tool')
+    assert.equal(result.tool_choice.function.name, 'my_custom_tool')
+  })
 })
 
 /* ------------------------------------------------------------------ */
@@ -484,7 +595,7 @@ describe('openaiToAnthropic', () => {
     assert.deepEqual(result.content[0].input, {})
   })
 
-  it('injects reasoning_content when present and content is empty', () => {
+  it('converts reasoning_content to a thinking block', () => {
     const oai = {
       ...BASE_OPENAI,
       choices: [{
@@ -493,10 +604,12 @@ describe('openaiToAnthropic', () => {
       }],
     }
     const result = openaiToAnthropic(oai)
-    assert.equal(result.content[0].text, 'thinking step by step')
+    assert.equal(result.content.length, 1)
+    assert.equal(result.content[0].type, 'thinking')
+    assert.equal(result.content[0].thinking, 'thinking step by step')
   })
 
-  it('uses content over reasoning_content when both present', () => {
+  it('adds both thinking and text blocks when both reasoning_content and content present', () => {
     const oai = {
       ...BASE_OPENAI,
       choices: [{
@@ -505,7 +618,11 @@ describe('openaiToAnthropic', () => {
       }],
     }
     const result = openaiToAnthropic(oai)
-    assert.equal(result.content[0].text, 'Final answer')
+    assert.equal(result.content.length, 2)
+    assert.equal(result.content[0].type, 'thinking')
+    assert.equal(result.content[0].thinking, 'thinking...')
+    assert.equal(result.content[1].type, 'text')
+    assert.equal(result.content[1].text, 'Final answer')
   })
 
   it('skips text block when content is null (tool-only)', () => {
@@ -528,6 +645,57 @@ describe('openaiToAnthropic', () => {
   it('handles missing choices gracefully', () => {
     const result = openaiToAnthropic({ id: 'x', model: 'm', usage: {}, choices: [] })
     assert.equal(result.content.length, 0)
+  })
+
+  it('converts reasoning_content and text to thinking + text blocks', () => {
+    const result = openaiToAnthropic({
+      ...BASE_OPENAI,
+      choices: [{
+        ...BASE_OPENAI.choices[0],
+        message: { role: 'assistant', content: '4', reasoning_content: 'Simple arithmetic.' },
+      }],
+    }, 'claude-sonnet-4-5')
+    assert.equal(result.content.length, 2)
+    assert.equal(result.content[0].type, 'thinking')
+    assert.equal(result.content[0].thinking, 'Simple arithmetic.')
+    assert.equal(result.content[1].type, 'text')
+    assert.equal(result.content[1].text, '4')
+  })
+
+  it('converts reasoning_content alone (no text) to thinking block', () => {
+    const result = openaiToAnthropic({
+      ...BASE_OPENAI,
+      choices: [{
+        ...BASE_OPENAI.choices[0],
+        finish_reason: 'length',
+        message: { role: 'assistant', content: '', reasoning_content: 'Thinking through the problem...' },
+      }],
+    }, 'claude-sonnet-4-5')
+    assert.equal(result.content.length, 1)
+    assert.equal(result.content[0].type, 'thinking')
+    assert.equal(result.content[0].thinking, 'Thinking through the problem...')
+    assert.equal(result.stop_reason, 'max_tokens')
+  })
+
+  it('reverses tool names via toolReverseMap', () => {
+    const reverseMap = { my_custom_tool: 'my/custom@tool' }
+    const result = openaiToAnthropic({
+      ...BASE_OPENAI,
+      choices: [{
+        ...BASE_OPENAI.choices[0],
+        finish_reason: 'tool_calls',
+        message: {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{
+            id: 'call_001',
+            type: 'function',
+            function: { name: 'my_custom_tool', arguments: '{}' },
+          }],
+        },
+      }],
+    }, 'claude-sonnet-4-5', reverseMap)
+    assert.equal(result.content[0].name, 'my/custom@tool')
   })
 })
 
@@ -720,5 +888,27 @@ describe('AnthropicStreamTransformer', () => {
     assert.equal(stops[0].index, 0)
     const messageDelta = parsed.find(e => e.type === 'message_delta')
     assert.equal(messageDelta.delta.stop_reason, 'tool_use')
+  })
+
+  it('emits correct SSE events for reasoning_content chunks', () => {
+    const t = createAnthropicStreamTransformer('claude-sonnet-4-5')
+    // First chunk: message_start + content_block_start
+    const e1 = t.pushChunk(makeChunk({ delta: { content: null, reasoning_content: 'Thinking' } }))
+    const e1Types = parseEvents(e1).map(e => e.type)
+    assert.ok(e1Types.includes('message_start'))
+    assert.ok(e1Types.includes('content_block_start'))
+
+    // Second chunk: content_block_delta
+    const e2 = t.pushChunk(makeChunk({ delta: { content: null, reasoning_content: ' further' } }))
+    const e2Types = parseEvents(e2).map(e => e.type)
+    assert.ok(e2Types.includes('content_block_delta'))
+
+    // Final chunk: content_block_stop + message_delta + message_stop
+    const e3 = t.pushChunk(makeChunk({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }))
+    const e3Types = parseEvents(e3).map(e => e.type)
+    assert.ok(e3Types.includes('content_block_stop'))
+    assert.ok(e3Types.includes('message_delta'))
+    assert.ok(e3Types.includes('message_stop'))
+    assert.equal(t.done, true)
   })
 })

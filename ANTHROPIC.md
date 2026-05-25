@@ -70,6 +70,18 @@ node --test test/messages-integration.test.js
 
 The integration test starts the server on a random port, registers a mock OpenAI-compatible endpoint, and verifies both streaming and non-streaming behavior.
 
+### Live Smoke Tests
+
+A standalone bash script tests the adapter against a **running server** (basic message, SSE streaming, and multi-turn tool calls):
+
+```bash
+./test/live-test.sh                    # http://localhost:7777
+BASE_URL=http://localhost:7777 ./test/live-test.sh
+API_KEY=sk-xxx ./test/live-test.sh
+```
+
+The script retries automatically if the model doesn't call a tool (common with `tool_choice: "auto"`).
+
 ## Troubleshooting
 
 - **Anthropic models do not appear in the UI:** This is by design. The UI only reads `sources.js`, which no longer contains Anthropic.
