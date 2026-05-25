@@ -1,5 +1,60 @@
 # Anthropic Support in ModelRelay
 
+## Architecture
+
+```
+┌────────────────────────┐   Anthropic Messages API   ┌──────────────────────────────────┐
+│  Claude Code CLI       │ ───── POST /v1/messages ──►│  ModelRelay Server              │
+│  VS Code Extension     │ ◀──── SSE / JSON ─────────  │  Port 7352 / 7777               │
+│  Hermes Agent          │                             │                                  │
+│  curl / any client     │                             │  lib/anthropic-routes.js         │
+└────────────────────────┘                             │    ┌────────────────────────┐   │
+                                                       │    │  anthropic-adapter.js  │   │
+┌────────────────────────┐                             │    │                        │   │
+│  Provider (DeepSeek,   │   OpenAI Chat Completions   │    │  anthropicToOpenAI()   │   │
+│  Gemini, Ollama, etc)  │ ◀──── POST /v1/chat/comps── │    │    • model mapping     │   │
+│                        │ ──── SSE / JSON ──────────► │    │    • tool_choice conv   │   │
+│  auto-fastest router   │                             │    │    • tool_result conv   │   │
+└────────────────────────┘                             │    │    • thinking blocks    │   │
+                                                       │    │                        │   │
+                                                       │    │  openaiToAnthropic()   │   │
+                                                       │    │    • finish_reason map  │   │
+                                                       │    │    • tool_calls conv    │   │
+                                                       │    │    • reasoning_content  │   │
+                                                       │    │                        │   │
+                                                       │    │  StreamTransformer      │   │
+                                                       │    │    • SSE event align    │   │
+                                                       │    │    • content_block seq  │   │
+                                                       │    └────────────────────────┘   │
+                                                       └──────────────────────────────────┘
+```
+
+**Request flow:**
+
+```
+ Client                         ModelRelay                        Provider
+   │                               │                                │
+   │  POST /v1/messages            │                                │
+   │  (Anthropic format)           │                                │
+   ├──────────────────────────────►│                                │
+   │                               │                                │
+   │                               │  anthropicToOpenAI()           │
+   │                               │  ──► convert to OpenAI format  │
+   │                               │                                │
+   │                               │  POST /v1/chat/completions     │
+   │                               │  (OpenAI format)               │
+   │                               ├───────────────────────────────►│
+   │                               │                                │
+   │                               │  ◄── response (JSON / SSE) ───│
+   │                               │                                │
+   │                               │  openaiToAnthropic()           │
+   │                               │  ──► convert to Anthropic fmt  │
+   │                               │  (or StreamTransformer for SSE)│
+   │                               │                                │
+   │  ◄── response (JSON / SSE) ───│                                │
+   │  (Anthropic format)           │                                │
+```
+
 ## Overview
 
 ModelRelay now supports the Anthropic Messages API (`/v1/messages`) via an internal adapter. This allows Claude Code CLI and the VS Code extension to connect through ModelRelay while using Anthropic's API format, without exposing Anthropic as a separate provider in the ModelRelay UI.
@@ -75,7 +130,7 @@ The integration test starts the server on a random port, registers a mock OpenAI
 A standalone bash script tests the adapter against a **running server** (basic message, SSE streaming, and multi-turn tool calls):
 
 ```bash
-./test/live-test.sh                    # http://localhost:7777
+./test/live-test.sh                    # http://localhost:7352
 BASE_URL=http://localhost:7777 ./test/live-test.sh
 API_KEY=sk-xxx ./test/live-test.sh
 ```
