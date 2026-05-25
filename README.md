@@ -164,11 +164,12 @@ Set these setting in your $HOME/.claude/settings.json file:
 {
   "env": {
     "ANTHROPIC_BASE_URL": "http://localhost:7352",
-    "ANTHROPIC_API_KEY": "whatever",
+    "ANTHROPIC_API_KEY": "sk-whatever",
     "ANTHROPIC_MODEL": "claude-sonnet-4-5",
   }
 }
 ```
+Note: even though there is no API key needed. You need to start with `sk-`
 
 ### Claude Code VS Code Extension Setup
 
