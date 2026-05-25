@@ -18,7 +18,7 @@
 
 set -euo pipefail
 
-BASE_URL="${BASE_URL:-http://localhost:7777}"
+BASE_URL="${BASE_URL:-http://localhost:7352}"
 API_KEY="${API_KEY:-test}"
 PASS=0
 FAIL=0
