@@ -158,12 +158,16 @@ Tool calls, reasoning content (`thinking_delta`), and plain text content are all
 
 ### Claude Code CLI Setup
 
-Set these environment variables or put them in your shell profile:
+Set these setting in your $HOME/.claude/settings.json file:
 
-```bash
-export ANTHROPIC_BASE_URL="http://localhost:7352/v1"
-export ANTHROPIC_API_KEY="any-key"
-export ANTHROPIC_MODEL="claude-sonnet-4-5"
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://localhost:7352",
+    "ANTHROPIC_API_KEY": "whatever",
+    "ANTHROPIC_MODEL": "claude-sonnet-4-5",
+  }
+}
 ```
 
 ### Claude Code VS Code Extension Setup
@@ -174,8 +178,8 @@ Add these settings to your VS Code `.vscode/settings.json` or global settings:
 {
   "claudeCode.disableLoginPrompt": true,
   "claudeCode.environmentVariables": [
-    { "name": "ANTHROPIC_BASE_URL", "value": "http://localhost:7352/v1" },
-    { "name": "ANTHROPIC_API_KEY",  "value": "any-key" },
+    { "name": "ANTHROPIC_BASE_URL", "value": "http://localhost:7352" },
+    { "name": "ANTHROPIC_API_KEY",  "value": "whatever" },
     { "name": "ANTHROPIC_MODEL",   "value": "claude-sonnet-4-5" }
   ]
 }
