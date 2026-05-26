@@ -173,14 +173,14 @@ Note: even though there is no API key needed. You need to start with `sk-`
 
 ### Claude Code VS Code Extension Setup
 
-Add these settings to your VS Code `.vscode/settings.json` or global settings:
+Add these settings to your VS Code `/path-to/vscode-or-code-server/User/settings.json` or global settings:
 
 ```json
 {
   "claudeCode.disableLoginPrompt": true,
   "claudeCode.environmentVariables": [
     { "name": "ANTHROPIC_BASE_URL", "value": "http://localhost:7352" },
-    { "name": "ANTHROPIC_API_KEY",  "value": "whatever" },
+    { "name": "ANTHROPIC_API_KEY",  "value": "sk-whatever" },
     { "name": "ANTHROPIC_MODEL",   "value": "claude-sonnet-4-5" }
   ]
 }
