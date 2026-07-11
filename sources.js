@@ -28,6 +28,7 @@ export const MODEL_ID_ALIASES = {
   'kimi-k2.6': 'moonshotai/kimi-k2.6',
   'kimi-k2:1t': 'moonshotai/kimi-k2-instruct',
   'deepseek-v4-flash-free': 'deepseek-v4-flash',
+  'hy3-free': 'tencent/hy3',
   'inclusionai/ring-2.6-1t:free': 'inclusionai/ring-2.6-1t',
   'inclusionai/ling-2.6-flash:free': 'inclusionai/ling-2.6-flash',
   'ling-2.6-flash-free': 'inclusionai/ling-2.6-flash',
@@ -51,6 +52,8 @@ export const MODEL_ID_ALIASES = {
   'nemotron-3-nano:30b': 'nvidia/nemotron-3-nano-30b-a3b',
   'nemotron-3-super': 'nvidia/nemotron-3-super-120b-a12b',
   'nemotron-3-super-free': 'nvidia/nemotron-3-super-120b-a12b',
+  'nemotron-3-ultra-free': 'nvidia/nemotron-3-ultra-550b-a55b',
+  'north-mini-code-free': 'cohere/north-mini-code',
   'qwen3.6-plus-free': 'qwen/qwen3.5-397b-a17b',
   'qwen/qwen3.6-plus-preview:free': 'qwen/qwen3.5-397b-a17b',
   'qwen3-vl:235b': 'qwen/qwen3-vl-235b-a22b',
@@ -85,6 +88,7 @@ export const MODEL_LABEL_OVERRIDES = {
   'glm-4.7': 'GLM 4.7',
   'glm-5': 'GLM 5',
   'glm-5.1': 'GLM 5.1',
+  'hy3-free': 'Hy3',
   'kimi-k2': 'Kimi K2',
   'kimi-k2-thinking': 'Kimi K2 Thinking',
   'kimi-k2.5': 'Kimi K2.5',
@@ -105,6 +109,8 @@ export const MODEL_LABEL_OVERRIDES = {
   'nemotron-3-nano:30b': 'Nemotron Nano 30B',
   'nemotron-3-super': 'Nemotron 3 Super',
   'nemotron-3-super-free': 'Nemotron 3 Super',
+  'nemotron-3-ultra-free': 'Nemotron 3 Ultra',
+  'north-mini-code-free': 'North Mini Code',
   'qwen3.6-plus-free': 'Qwen3.6 Plus',
   'qwen/qwen3.6-plus-preview:free': 'Qwen3.6 Plus Preview',
   'qwen3-vl:235b': 'Qwen3 VL 235B',
@@ -121,10 +127,15 @@ export const MODEL_LABEL_OVERRIDES = {
 }
 
 export const MODEL_CONTEXT_OVERRIDES = {
+  'cohere/north-mini-code': '256k',
+  'hy3-free': '262k',
   'inclusionai/ling-2.6-flash': '262k',
   'kimi-k2.6': '262k',
   'ling-2.6-flash-free': '262k',
   'moonshotai/kimi-k2.6': '262k',
+  'nemotron-3-ultra-free': '1M',
+  'north-mini-code-free': '256k',
+  'tencent/hy3': '262k',
 }
 
 export function resolveAliasedModelId(modelId) {

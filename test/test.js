@@ -1092,6 +1092,22 @@ describe('dynamic model score resolution', () => {
     }
   })
 
+  it('uses verified scores for the latest free coding models across providers', () => {
+    const cases = [
+      ['tencent/hy3:free', 0.78],
+      ['hy3-free', 0.78],
+      ['poolside/laguna-xs-2.1:free', 0.709],
+      ['cohere/north-mini-code:free', 0.676],
+      ['north-mini-code-free', 0.676],
+      ['nvidia/nemotron-3-ultra-550b-a55b:free', 0.719],
+      ['nemotron-3-ultra-free', 0.719],
+    ]
+
+    for (const [modelId, expectedScore] of cases) {
+      assert.equal(getScore(modelId), expectedScore)
+    }
+  })
+
   it('ignores safety-only dynamic models that should not be routed as coding models', () => {
     assert.equal(toKiloCodeModelMeta({ id: 'meta-llama/llama-guard-4-12b:free' }), null)
     assert.equal(toOpenRouterModelMeta({ id: 'meta-llama/llama-guard-4-12b:free' }), null)
