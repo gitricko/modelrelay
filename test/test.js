@@ -1092,9 +1092,61 @@ describe('dynamic model score resolution', () => {
     }
   })
 
+  it('uses verified scores for the latest free coding models across providers', () => {
+    const cases = [
+      ['tencent/hy3:free', 0.78],
+      ['hy3-free', 0.78],
+      ['poolside/laguna-xs-2.1:free', 0.709],
+      ['cohere/north-mini-code:free', 0.676],
+      ['north-mini-code-free', 0.676],
+      ['nvidia/nemotron-3-ultra-550b-a55b:free', 0.719],
+      ['nemotron-3-ultra-free', 0.719],
+    ]
+
+    for (const [modelId, expectedScore] of cases) {
+      assert.equal(getScore(modelId), expectedScore)
+    }
+  })
+
+  it('resolves every coding model reported by the refresh-scores audit', () => {
+    const cases = [
+      ['glm-5.2', 0.787],
+      ['z-ai/glm-5.2', 0.787],
+      ['kimi-k2.7-code', 0.62],
+      ['moonshotai/kimi-k2.7-code', 0.62],
+      ['mimo-v2.5-free', 0.561],
+      ['minimax-m3', 0.805],
+      ['minimaxai/minimax-m3', 0.805],
+      ['nemotron-3-ultra', 0.719],
+      ['stepfun/step-3.7-flash:free', 0.737],
+      ['stepfun-ai/step-3.7-flash', 0.737],
+    ]
+
+    for (const [modelId, expectedScore] of cases) {
+      assert.equal(getScore(modelId), expectedScore)
+    }
+  })
+
+  it('includes newly available NIM coding models in the static catalog', () => {
+    const nvidiaModelIds = new Set(sources.nvidia.models.map(([modelId]) => modelId))
+    const expected = [
+      'z-ai/glm-5.2',
+      'moonshotai/kimi-k2.7-code',
+      'minimaxai/minimax-m3',
+      'nvidia/nemotron-3-ultra-550b-a55b',
+      'stepfun-ai/step-3.7-flash',
+    ]
+
+    for (const modelId of expected) {
+      assert.equal(nvidiaModelIds.has(modelId), true, `Missing NIM model: ${modelId}`)
+    }
+  })
+
   it('ignores safety-only dynamic models that should not be routed as coding models', () => {
     assert.equal(toKiloCodeModelMeta({ id: 'meta-llama/llama-guard-4-12b:free' }), null)
     assert.equal(toOpenRouterModelMeta({ id: 'meta-llama/llama-guard-4-12b:free' }), null)
+    assert.equal(toKiloCodeModelMeta({ id: 'nvidia/nemotron-3.5-content-safety:free' }), null)
+    assert.equal(toOpenRouterModelMeta({ id: 'nvidia/nemotron-3.5-content-safety:free' }), null)
   })
 
   it('uses scores.js entry for KiloCode models when payload omits scores', () => {
